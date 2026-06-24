@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>eVTOL FPV — ERAU Daytona Beach</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:'Courier New',monospace; }
+canvas#c { display:block; }
+
+/* ── HUD ── */
+#hud {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  pointer-events:none; z-index:10;
+}
+
+/* Speed tape - left */
+#speed-tape {
+  position:absolute; left:24px; top:50%; transform:translateY(-50%);
+  width:64px; background:rgba(0,0,0,0.55); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:8px 0; text-align:center;
+}
+.tape-label { color:#4af; font-size:9px; letter-spacing:1px; }
+.tape-val   { color:#fff; font-size:22px; font-weight:bold; }
+.tape-unit  { color:#4af; font-size:9px; }
+
+/* Alt tape - right */
+#alt-tape {
+  position:absolute; right:24px; top:50%; transform:translateY(-50%);
+  width:64px; background:rgba(0,0,0,0.55); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:8px 0; text-align:center;
+}
+
+/* Center reticle + data */
+#center-box {
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  text-align:center; pointer-events:none;
+}
+#reticle {
+  width:60px; height:60px; position:relative; margin:0 auto;
+}
+#reticle::before, #reticle::after {
+  content:''; position:absolute; background:rgba(0,255,150,0.7);
+}
+/* H line segments */
+#reticle::before { width:16px; height:1px; top:50%; left:2px; }
+#reticle::after  { width:16px; height:1px; top:50%; right:2px; }
+.reticle-v {
+  position:absolute; width:1px; height:16px; background:rgba(0,255,150,0.7);
+  left:50%;
+}
+.reticle-v.top { top:2px; }
+.reticle-v.bot { bottom:2px; }
+.reticle-dot {
+  position:absolute; width:4px; height:4px; border-radius:50%;
+  background:rgba(0,255,150,0.9); top:50%; left:50%; transform:translate(-50%,-50%);
+}
+#heading-val {
+  margin-top:10px; color:#0f9; font-size:18px; font-weight:bold; letter-spacing:2px;
+}
+#heading-compass {
+  color:#4af; font-size:10px; letter-spacing:1px; margin-top:2px;
+}
+
+/* Heading tape - top */
+#hdg-tape {
+  position:absolute; top:16px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:6px 20px; text-align:center;
+}
+#hdg-num { color:#fff; font-size:20px; font-weight:bold; letter-spacing:3px; }
+#hdg-bar { color:#4af; font-size:11px; margin-top:2px; letter-spacing:4px; }
+
+/* Top-left mission data */
+#mission-data {
+  position:absolute; top:16px; left:16px;
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.3);
+  border-radius:4px; padding:10px 14px; min-width:180px;
+}
+#mission-data .row { display:flex; justify-content:space-between; gap:16px; margin:2px 0; }
+#mission-data .lbl { color:#4a8fc0; font-size:10px; }
+#mission-data .val { color:#fff; font-size:10px; font-weight:bold; }
+
+/* Camera mode badge - top right */
+#cam-badge {
+  position:absolute; top:16px; right:16px;
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:8px 14px; color:#4af; font-size:11px; letter-spacing:1px;
+}
+#cam-mode-name { color:#fff; font-weight:bold; font-size:13px; }
+
+/* ── Mini-map ── */
+#minimap-wrap {
+  position:fixed; bottom:20px; right:20px; z-index:10;
+  border:2px solid rgba(0,180,255,0.5); border-radius:6px; overflow:hidden;
+  box-shadow:0 0 16px rgba(0,150,255,0.3);
+}
+#minimap { display:block; }
+#minimap-label {
+  position:absolute; bottom:4px; left:0; right:0;
+  text-align:center; color:#4af; font-size:9px;
+  font-family:'Courier New',monospace; pointer-events:none;
+}
+
+/* ── Controls legend ── */
+#ctrl-legend {
+  position:fixed; bottom:20px; left:20px; z-index:10;
+  background:rgba(0,0,0,0.65); border:1px solid rgba(0,200,255,0.3);
+  border-radius:6px; padding:10px 14px; color:#4a8fc0; font-size:10px; line-height:1.9;
+}
+#ctrl-legend b { color:#7ecfff; }
+#ctrl-legend .row { display:flex; gap:8px; align-items:center; }
+.key {
+  display:inline-block; background:rgba(0,150,255,0.2); border:1px solid rgba(0,200,255,0.5);
+  border-radius:3px; padding:0 5px; color:#fff; font-size:9px; min-width:22px; text-align:center;
+}
+
+/* ── Warning / boundary flash ── */
+#warn {
+  position:fixed; top:0; left:0; right:0; bottom:0; z-index:20;
+  pointer-events:none; background:rgba(255,50,0,0); transition:background 0.1s;
+}
+
+/* Startup overlay */
+#start-overlay {
+  position:fixed; inset:0; z-index:100;
+  background:rgba(0,5,15,0.92); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:20px;
+}
+#start-overlay h1 { color:#1e90ff; font-size:28px; letter-spacing:4px; }
+#start-overlay p  { color:#4a8fc0; font-size:13px; letter-spacing:1px; text-align:center; max-width:480px; line-height:1.8; }
+#start-overlay .sub { color:#7ecfff; font-size:11px; }
+#start-btn {
+  margin-top:10px; padding:12px 40px; background:rgba(30,144,255,0.2);
+  border:2px solid #1e90ff; color:#fff; font-family:'Courier New',monospace;
+  font-size:14px; letter-spacing:3px; cursor:pointer; border-radius:4px;
+  transition:all 0.2s;
+}
+#start-btn:hover { background:rgba(30,144,255,0.4); }
+
+/* loading bar */
+#load-bar-wrap { width:300px; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; }
+#load-bar { height:100%; background:#1e90ff; border-radius:3px; width:0%; transition:width 0.3s; }
+#load-status { color:#4a8fc0; font-size:11px; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <!-- Speed tape -->
+  <div id="speed-tape">
+    <div class="tape-label">SPEED</div>
+    <div class="tape-val" id="spd-val">0</div>
+    <div class="tape-unit">KT</div>
+    <div style="margin-top:6px;height:1px;background:rgba(0,200,255,0.3)"></div>
+    <div style="margin-top:4px;" class="tape-label">GND SPD</div>
+    <div style="color:#adf;font-size:11px;" id="gspd-val">0 m/s</div>
+  </div>
+
+  <!-- Alt tape -->
+  <div id="alt-tape">
+    <div class="tape-label">ALT</div>
+    <div class="tape-val" id="alt-val">0</div>
+    <div class="tape-unit">M AGL</div>
+    <div style="margin-top:6px;height:1px;background:rgba(0,200,255,0.3)"></div>
+    <div style="margin-top:4px;" class="tape-label">VSPD</div>
+    <div style="color:#adf;font-size:11px;" id="vspd-val">+0 m/s</div>
+  </div>
+
+  <!-- Heading tape -->
+  <div id="hdg-tape">
+    <div id="hdg-num">000°</div>
+    <div id="hdg-bar">N</div>
+  </div>
+
+  <!-- Center reticle -->
+  <div id="center-box">
+    <div id="reticle">
+      <div class="reticle-v top"></div>
+      <div class="reticle-v bot"></div>
+      <div class="reticle-dot"></div>
+    </div>
+    <div id="heading-val">HDG 000</div>
+    <div id="heading-compass">NORTH</div>
+  </div>
+
+  <!-- Mission data top-left -->
+  <div id="mission-data">
+    <div class="row"><span class="lbl">LAT</span><span class="val" id="m-lat">29.1939</span></div>
+    <div class="row"><span class="lbl">LON</span><span class="val" id="m-lon">-81.0514</span></div>
+    <div class="row"><span class="lbl">ALT</span><span class="val" id="m-alt">30 m</span></div>
+    <div class="row"><span class="lbl">AREA</span><span class="val" id="m-area">ERAU CAMPUS</span></div>
+  </div>
+
+  <!-- Camera badge -->
+  <div id="cam-badge">
+    CAM: <span id="cam-mode-name">FPV</span>
+  </div>
+</div>
+
+<!-- Mini-map -->
+<div id="minimap-wrap" style="position:fixed;bottom:20px;right:20px;z-index:10;">
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="minimap-label">ERAU · DAYTONA</div>
+</div>
+
+<!-- Controls -->
+<div id="ctrl-legend">
+  <div style="color:#7ecfff;font-size:11px;margin-bottom:6px;letter-spacing:1px;">CONTROLS</div>
+  <div class="row"><span class="key">↑W</span> Fly Forward</div>
+  <div class="row"><span class="key">↓S</span> Brake / Back</div>
+  <div class="row"><span class="key">←A</span> Yaw Left</div>
+  <div class="row"><span class="key">→D</span> Yaw Right</div>
+  <div class="row"><span class="key">SPC</span> Ascend</div>
+  <div class="row"><span class="key">SFT</span> Descend</div>
+  <div class="row"><span class="key">Q E</span> Strafe L / R</div>
+  <div style="height:1px;background:rgba(0,200,255,0.2);margin:4px 0;"></div>
+  <div class="row"><span class="key">1</span> FPV Cam</div>
+  <div class="row"><span class="key">2</span> Chase Cam</div>
+  <div class="row"><span class="key">3</span> Map Cam</div>
+  <div class="row"><span class="key">+−</span> Speed ×</div>
+  <div class="row"><span class="key">R</span> Reset</div>
+  <div style="height:1px;background:rgba(0,200,255,0.2);margin:4px 0;"></div>
+  <div class="row"><span class="key">X</span> <span style="color:#ff8844">Disaster Mode</span></div>
+</div>
+
+<!-- Boundary flash -->
+<div id="warn"></div>
+
+<!-- Startup overlay -->
+<div id="start-overlay">
+  <h1>⬡ eVTOL FPV</h1>
+  <p>ERAU DAYTONA BEACH · SATELLITE MAP</p>
+  <div id="load-bar-wrap"><div id="load-bar"></div></div>
+  <div id="load-status">Loading satellite tiles…</div>
+  <p class="sub">Real Esri World Imagery · 7×7 tile grid · ~930 m × 930 m boundary</p>
+  <button id="start-btn" style="display:none" onclick="startGame()">▶ LAUNCH</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════
+const ORIGIN_LAT =  29.1939;
+const ORIGIN_LON = -81.0514;
+const TILE_Z     = 18;
+const GRID_HALF  = 3;        // 7×7 grid
+const GRID_N     = GRID_HALF * 2 + 1; // 7
+
+// Tile size in metres at zoom 18, lat ~29.19°
+const TILE_M = 156543.03392 * Math.cos(ORIGIN_LAT * Math.PI / 180) / Math.pow(2, TILE_Z) * 256;
+// ≈ 133.6 m
+
+const HALF_GRID_M = GRID_HALF * TILE_M;   // boundary ±this from origin
+const MAX_ALT     = 300;
+const MIN_ALT     = 2;
+
+// Origin tile (x,y) at zoom 18
+function latLonToTileXY(lat, lon, z) {
+  const n = Math.pow(2, z);
+  const tx = Math.floor((lon + 180) / 360 * n);
+  const lr = lat * Math.PI / 180;
+  const ty = Math.floor((1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n);
+  return { x: tx, y: ty };
+}
+const ORIGIN_TILE = latLonToTileXY(ORIGIN_LAT, ORIGIN_LON, TILE_Z);
+
+// World ↔ lat/lon
+function worldToLatLon(wx, wz) {
+  return {
+    lat: ORIGIN_LAT - wz / 111320,
+    lon: ORIGIN_LON + wx / (111320 * Math.cos(ORIGIN_LAT * Math.PI / 180))
+  };
+}
+
+// ═══════════════════════════════════════════════
+//  THREE.JS SCENE
+// ═══════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = false;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x6ba3d6);
+scene.fog = new THREE.FogExp2(0x8bbfe0, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.5, 3000);
+camera.position.set(0, 30, 0);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+const sun = new THREE.DirectionalLight(0xfff4e0, 0.8);
+sun.position.set(200, 500, 100);
+scene.add(sun);
+
+// ── Sky dome ──
+const skyGeo  = new THREE.SphereGeometry(2500, 16, 8);
+const skyMat  = new THREE.MeshBasicMaterial({
+  color: 0x7ab8e8, side: THREE.BackSide
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// Horizon haze plane
+const hazeGeo = new THREE.PlaneGeometry(5000, 5000);
+hazeGeo.rotateX(-Math.PI / 2);
+const hazeMat = new THREE.MeshBasicMaterial({
+  color: 0x5090b0, transparent: true, opacity: 0.18, depthWrite: false
+});
+const hazePlane = new THREE.Mesh(hazeGeo, hazeMat);
+hazePlane.position.y = 0.5;
+scene.add(hazePlane);
+
+// ── Ground fill (between tiles) ──
+const groundGeo = new THREE.PlaneGeometry(TILE_M * GRID_N * 2, TILE_M * GRID_N * 2);
+groundGeo.rotateX(-Math.PI / 2);
+const groundMat = new THREE.MeshBasicMaterial({ color: 0x3a6e3a });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.position.y = -0.3;
+scene.add(ground);
+
+// ═══════════════════════════════════════════════
+//  SATELLITE TILE GRID
+// ═══════════════════════════════════════════════
+const tileLoader = new THREE.TextureLoader();
+tileLoader.crossOrigin = 'anonymous';
+
+const tileGroup  = new THREE.Group();
+scene.add(tileGroup);
+
+let tilesLoaded  = 0;
+const TOTAL_TILES = GRID_N * GRID_N;  // 49
+
+function loadTiles() {
+  for (let dy = -GRID_HALF; dy <= GRID_HALF; dy++) {
+    for (let dx = -GRID_HALF; dx <= GRID_HALF; dx++) {
+      const tx = ORIGIN_TILE.x + dx;
+      const ty = ORIGIN_TILE.y + dy;
+      const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${TILE_Z}/${ty}/${tx}`;
+
+      const geo = new THREE.PlaneGeometry(TILE_M, TILE_M);
+      geo.rotateX(-Math.PI / 2);
+
+      const mat = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
+
+      tileLoader.load(
+        url,
+        (tex) => {
+          tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+          mat.map = tex;
+          mat.needsUpdate = true;
+          tilesLoaded++;
+          const pct = Math.round(tilesLoaded / TOTAL_TILES * 100);
+          document.getElementById('load-bar').style.width = pct + '%';
+          document.getElementById('load-status').textContent = `Loading tiles… ${tilesLoaded}/${TOTAL_TILES}`;
+          if (tilesLoaded >= TOTAL_TILES) {
+            document.getElementById('load-status').textContent = 'Ready.';
+            document.getElementById('start-btn').style.display = 'block';
+          }
+        },
+        undefined,
+        () => {
+          // On error: grey placeholder
+          mat.color = new THREE.Color(0x334455);
+          tilesLoaded++;
+          if (tilesLoaded >= TOTAL_TILES) {
+            document.getElementById('start-btn').style.display = 'block';
+          }
+        }
+      );
+
+      const mesh = new THREE.Mesh(geo, mat);
+      // +dx = east (+X), +dy = south (+Z)
+      mesh.position.set(dx * TILE_M, 0, dy * TILE_M);
+      tileGroup.add(mesh);
+    }
+  }
+}
+
+// ── Boundary walls (invisible collision) ──
+function addBoundaryMarkers() {
+  const wallH  = 80;
+  const wallW  = GRID_HALF * 2 * TILE_M;
+  const wallMat = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.0, side: THREE.DoubleSide });
+  const wallPositions = [
+    { x: 0,            z: -HALF_GRID_M, ry: 0 },
+    { x: 0,            z:  HALF_GRID_M, ry: 0 },
+    { x: -HALF_GRID_M, z: 0,            ry: Math.PI/2 },
+    { x:  HALF_GRID_M, z: 0,            ry: Math.PI/2 },
+  ];
+  wallPositions.forEach(w => {
+    const geo = new THREE.PlaneGeometry(wallW, wallH);
+    const m = new THREE.Mesh(geo, wallMat);
+    m.position.set(w.x, wallH/2, w.z);
+    m.rotation.y = w.ry;
+    scene.add(m);
+  });
+}
+addBoundaryMarkers();
+
+// ── Boundary warning poles (visible markers) ──
+function addBoundaryPoles() {
+  const poleMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
+  const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 30, 6);
+  const corners = [
+    [-HALF_GRID_M, -HALF_GRID_M],
+    [ HALF_GRID_M, -HALF_GRID_M],
+    [-HALF_GRID_M,  HALF_GRID_M],
+    [ HALF_GRID_M,  HALF_GRID_M],
+  ];
+  corners.forEach(([x, z]) => {
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(x, 15, z);
+    scene.add(pole);
+  });
+}
+addBoundaryPoles();
+
+// ═══════════════════════════════════════════════
+//  CAMPUS BUILDINGS
+// ═══════════════════════════════════════════════
+
+// Convert lat/lon offset to world metres from ORIGIN
+function ll2w(lat, lon) {
+  const wx =  (lon - ORIGIN_LON) * 111320 * Math.cos(ORIGIN_LAT * Math.PI / 180);
+  const wz = -(lat - ORIGIN_LAT) * 111320;
+  return [wx, wz];
+}
+
+// Sprite label above building
+function makeLabel(text, wx, height, wz) {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 48;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = 'rgba(0,5,20,0.75)';
+  cx.roundRect ? cx.roundRect(0,0,256,48,6) : cx.fillRect(0,0,256,48);
+  cx.fill();
+  cx.strokeStyle = 'rgba(0,180,255,0.6)';
+  cx.lineWidth = 1.5;
+  cx.strokeRect(1,1,254,46);
+  cx.fillStyle = '#7ecfff';
+  cx.font = 'bold 14px Courier New';
+  cx.textAlign = 'center';
+  cx.textBaseline = 'middle';
+  cx.fillText(text, 128, 24);
+  const tex = new THREE.CanvasTexture(cv);
+  const sp  = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  sp.scale.set(22, 4, 1);
+  sp.position.set(wx, height + 4, wz);
+  scene.add(sp);
+}
+
+// Window-stripe texture for building facades
+function makeBuildingTex(baseHex, windowHex, floors) {
+  const cv = document.createElement('canvas');
+  cv.width = 64; cv.height = 128;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#' + baseHex.toString(16).padStart(6,'0');
+  cx.fillRect(0, 0, 64, 128);
+  const rowH = 128 / floors;
+  cx.fillStyle = '#' + windowHex.toString(16).padStart(6,'0');
+  for (let f = 0; f < floors; f++) {
+    for (let c = 0; c < 4; c++) {
+      cx.fillRect(4 + c * 15, f * rowH + 3, 10, rowH - 6);
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function addBuilding(lat, lon, w, h, d, colorHex, roofHex, label, floors=4) {
+  const [wx, wz] = ll2w(lat, lon);
+  const tex = makeBuildingTex(colorHex, 0x88aacc, floors);
+  tex.repeat.set(w/8, h/4);
+  const mat = new THREE.MeshLambertMaterial({ map: tex, color: 0xffffff });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  mesh.position.set(wx, h / 2, wz);
+  scene.add(mesh);
+
+  // Roof slab
+  const roofMat = new THREE.MeshLambertMaterial({ color: roofHex });
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.6, d + 0.4), roofMat);
+  roof.position.set(wx, h + 0.3, wz);
+  scene.add(roof);
+
+  // HVAC/rooftop units (flat boxes)
+  const hvacMat = new THREE.MeshLambertMaterial({ color: 0x445566 });
+  [[0.3, 0.3],[-0.3, 0.0]].forEach(([ox, oz]) => {
+    const hv = new THREE.Mesh(new THREE.BoxGeometry(w*0.2, 1.2, d*0.15), hvacMat);
+    hv.position.set(wx + ox * w, h + 0.9, wz + oz * d);
+    scene.add(hv);
+  });
+
+  // Ground shadow
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(w + 2, d + 2), shadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(wx + 1.5, 0.05, wz + 1.5);
+  scene.add(shadow);
+
+  if (label) makeLabel(label, wx, h, wz);
+}
+
+function addTower(lat, lon, baseW, height, label) {
+  const [wx, wz] = ll2w(lat, lon);
+
+  // Base
+  const baseMat = new THREE.MeshLambertMaterial({ color: 0x556677 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(baseW, height * 0.55, baseW), baseMat);
+  base.position.set(wx, height * 0.275, wz);
+  scene.add(base);
+
+  // Glass cab at top
+  const cabMat = new THREE.MeshLambertMaterial({ color: 0x88ccee, transparent: true, opacity: 0.8 });
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(baseW * 1.5, height * 0.18, baseW * 1.5), cabMat);
+  cab.position.set(wx, height * 0.64, wz);
+  scene.add(cab);
+
+  // Antenna spike
+  const antMat = new THREE.MeshLambertMaterial({ color: 0xaabbcc });
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, height * 0.25, 6), antMat);
+  ant.position.set(wx, height * 0.85, wz);
+  scene.add(ant);
+
+  // Red aviation light on top
+  const lightMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+  const light = new THREE.Mesh(new THREE.SphereGeometry(0.4, 6, 4), lightMat);
+  light.position.set(wx, height, wz);
+  scene.add(light);
+
+  if (label) makeLabel(label, wx, height * 0.72, wz);
+}
+
+function addHangar(lat, lon, w, h, d, colorHex, label) {
+  const [wx, wz] = ll2w(lat, lon);
+
+  // Main structure
+  const wallMat = new THREE.MeshLambertMaterial({ color: colorHex });
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+  walls.position.set(wx, h / 2, wz);
+  scene.add(walls);
+
+  // Arched roof (cylinder segment)
+  const archGeo = new THREE.CylinderGeometry(w / 2 * 0.9, w / 2 * 0.9, d, 16, 1, false, 0, Math.PI);
+  const archMat = new THREE.MeshLambertMaterial({ color: 0x556677 });
+  const arch = new THREE.Mesh(archGeo, archMat);
+  arch.rotation.z = Math.PI / 2;
+  arch.position.set(wx, h, wz);
+  scene.add(arch);
+
+  // Hangar doors (darker stripe on front face)
+  const doorMat = new THREE.MeshLambertMaterial({ color: 0x223344 });
+  const door = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, h * 0.85, 0.5), doorMat);
+  door.position.set(wx, h * 0.425, wz - d / 2 - 0.1);
+  scene.add(door);
+
+  // Ground shadow
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(w + 3, d + 3), shadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(wx + 2, 0.05, wz + 2);
+  scene.add(shadow);
+
+  if (label) makeLabel(label, wx, h + w * 0.45 + 1, wz);
+}
+
+function addApron(lat, lon, w, d) {
+  const [wx, wz] = ll2w(lat, lon);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  apron.rotation.x = -Math.PI / 2;
+  apron.position.set(wx, 0.02, wz);
+  scene.add(apron);
+
+  // Centerline stripe
+  const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
+  const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.5, d * 0.85), stripeMat);
+  stripe.rotation.x = -Math.PI / 2;
+  stripe.position.set(wx, 0.03, wz);
+  scene.add(stripe);
+}
+
+// ── ERAU Daytona Beach Campus Buildings ──
+// Academic core (west of Clyde Morris Blvd)
+addBuilding(29.1940, -81.0506,  52, 18,  38, 0xccb899, 0x444433, 'ICI CENTER',         5);
+addBuilding(29.1933, -81.0520,  34, 14,  26, 0xaabbcc, 0x334455, 'COAS BUILDING',      4);
+addBuilding(29.1930, -81.0508,  28, 12,  22, 0xbbaa99, 0x443322, 'ADMIN / MORI',       3);
+addBuilding(29.1945, -81.0530,  26, 10,  20, 0x99aabb, 0x223344, 'COE ANNEX',          3);
+addBuilding(29.1922, -81.0528,  24, 16,  20, 0xddccbb, 0x554433, 'AYERS HALL (DORM)',  4);
+addBuilding(29.1918, -81.0515,  30, 14,  24, 0xccddbb, 0x445533, 'STUDENT UNION',      4);
+addBuilding(29.1928, -81.0494,  20,  9,  18, 0xaabbaa, 0x334433, 'RIDDLE REC CENTER',  2);
+
+// Flight line area (east side, near DAB ramp)
+addApron(29.1952, -81.0480, 180, 50);
+addHangar(29.1958, -81.0475,  36, 12,  28, 0x8899aa, 'HANGAR ALPHA');
+addHangar(29.1951, -81.0465,  40, 14,  32, 0x7a8a9a, 'HANGAR BRAVO');
+addHangar(29.1944, -81.0460,  36, 12,  28, 0x889999, 'HANGAR CHARLIE');
+addTower( 29.1955, -81.0485,   6, 42,         'CONTROL TOWER');
+
+// ═══════════════════════════════════════════════
+//  POST-DISASTER SCENARIO OBJECTS
+// ═══════════════════════════════════════════════
+let disasterActive = false;
+const disasterObjects = [];   // toggled visible/invisible
+const fireGroups     = [];    // animated each frame
+const smokeParticles = [];    // animated each frame
+let   disasterTime   = 0;
+
+// ── Utility: toggle visibility ──
+function disGroup(obj) { disasterObjects.push(obj); obj.visible = false; return obj; }
+
+// ── Flood zones (blue water planes) ──
+function addFlood(lat, lon, w, d) {
+  const [wx, wz] = ll2w(lat, lon);
+  // ripple-ring glow underneath
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x002255, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(w + 8, d + 8), glowMat);
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.set(wx, 0.1, wz);
+  disGroup(glow); scene.add(glow);
+
+  const waterMat = new THREE.MeshBasicMaterial({ color: 0x1155cc, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(w, d), waterMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(wx, 0.6, wz);
+  water.userData.baseY = 0.6;
+  disGroup(water); scene.add(water);
+  return water;
+}
+
+// ── Fire (animated cones + glow point-light) ──
+function addFire(lat, lon, baseAlt, size, count) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+
+  for (let i = 0; i < count; i++) {
+    const h   = size * (0.7 + Math.random() * 0.8);
+    const r   = size * (0.25 + Math.random() * 0.15);
+    const geo = new THREE.ConeGeometry(r, h, 7);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.85 });
+    const cone = new THREE.Mesh(geo, mat);
+    cone.position.set((Math.random() - 0.5) * size * 0.6, baseAlt + h / 2, (Math.random() - 0.5) * size * 0.6);
+    cone.userData.phase  = Math.random() * Math.PI * 2;
+    cone.userData.height = h;
+    grp.add(cone);
+  }
+  // inner brighter core
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.6 });
+  const core = new THREE.Mesh(new THREE.ConeGeometry(size * 0.18, size * 0.7, 6), coreMat);
+  core.position.set(0, baseAlt + size * 0.35, 0);
+  core.userData.phase = 0; core.userData.height = size * 0.7;
+  grp.add(core);
+
+  // glow light
+  const pl = new THREE.PointLight(0xff6600, 2.5, size * 12);
+  pl.position.set(0, baseAlt + size * 0.8, 0);
+  grp.add(pl);
+
+  grp.position.set(wx, 0, wz);
+  disGroup(grp); scene.add(grp);
+  fireGroups.push(grp);
+  return grp;
+}
+
+// ── Smoke column (rising spheres) ──
+function addSmoke(lat, lon, baseAlt, count) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+  for (let i = 0; i < count; i++) {
+    const r   = 1.5 + i * 0.7;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.45 - i * 0.03 });
+    const sp  = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+    sp.position.set((Math.random() - 0.5) * 2, baseAlt + i * 4, (Math.random() - 0.5) * 2);
+    sp.userData.riseSpeed  = 3 + Math.random() * 2;
+    sp.userData.drift      = new THREE.Vector3((Math.random()-0.5)*0.4, 0, (Math.random()-0.5)*0.4);
+    sp.userData.baseY      = baseAlt + i * 4;
+    sp.userData.maxY       = baseAlt + count * 4 + 20;
+    grp.add(sp);
+  }
+  grp.position.set(wx, 0, wz);
+  disGroup(grp); scene.add(grp);
+  smokeParticles.push(grp);
+  return grp;
+}
+
+// ── Debris field (scattered rubble boxes) ──
+function addDebrisField(lat, lon, count, spread) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+  const colors = [0x886644, 0x997755, 0x775533, 0x664422, 0x888888, 0x999999];
+  for (let i = 0; i < count; i++) {
+    const s   = 0.4 + Math.random() * 1.4;
+    const h   = 0.2 + Math.random() * 0.6;
+    const mat = new THREE.MeshLambertMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+    const geo = new THREE.BoxGeometry(s, h, s * (0.6 + Math.random() * 0.8));
+    const m   = new THREE.Mesh(geo, mat);
+    m.position.set((Math.random() - 0.5) * spread, h / 2, (Math.random() - 0.5) * spread);
+    m.rotation.y = Math.random() * Math.PI;
+    m.rotation.z = (Math.random() - 0.5) * 0.5;
+    grp.add(m);
+  }
+  grp.position.set(wx, 0, wz);
+  disGroup(grp); scene.add(grp);
+  return grp;
+}
+
+// ── Downed trees ──
+function addDownedTree(lat, lon) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+  // trunk (lying on side)
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.45, 6, 8),
+    new THREE.MeshLambertMaterial({ color: 0x553311 })
+  );
+  trunk.rotation.z = Math.PI / 2;
+  trunk.position.set(0, 0.4, 0);
+  grp.add(trunk);
+  // foliage blob
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, 8, 6),
+    new THREE.MeshLambertMaterial({ color: 0x224411 })
+  );
+  leaves.position.set(3.2, 1.5, 0);
+  leaves.scale.set(1, 0.6, 1.3);
+  grp.add(leaves);
+  grp.position.set(wx, 0, wz);
+  grp.rotation.y = Math.random() * Math.PI;
+  disGroup(grp); scene.add(grp);
+}
+
+// ── Hurricane shelter tent ──
+function addShelterTent(lat, lon, label) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+
+  // Floor mat
+  const floorMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(12, 0.15, 8), floorMat);
+  floor.position.y = 0.07;
+  grp.add(floor);
+
+  // Tent body (stretched box)
+  const tentMat = new THREE.MeshLambertMaterial({ color: 0xee9922 });
+  const tent = new THREE.Mesh(new THREE.BoxGeometry(12, 4, 8), tentMat);
+  tent.position.y = 2;
+  grp.add(tent);
+
+  // Tent ridge (triangular prism via CylinderGeometry trick)
+  const ridgeMat = new THREE.MeshLambertMaterial({ color: 0xcc7711 });
+  const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 13, 4), ridgeMat);
+  ridge.rotation.z = Math.PI / 2;
+  ridge.position.y = 4.1;
+  grp.add(ridge);
+
+  // Red cross on side
+  const crossMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  const crossH = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.15), crossMat);
+  crossH.position.set(0, 2, 4.1);
+  grp.add(crossH);
+  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.2, 0.15), crossMat);
+  crossV.position.set(0, 2, 4.1);
+  grp.add(crossV);
+
+  // Support poles at corners
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  [[-5.8,3.8],[-5.8,-3.8],[5.8,3.8],[5.8,-3.8]].forEach(([px,pz]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.2, 6), poleMat);
+    pole.position.set(px, 2.1, pz);
+    grp.add(pole);
+  });
+
+  grp.position.set(wx, 0, wz);
+  disGroup(grp); scene.add(grp);
+  if (label) makeLabel(label, wx, 5.5, wz);
+  return grp;
+}
+
+// ── Casualty marker (red cross on ground) ──
+function addCasualtyMarker(lat, lon, num) {
+  const [wx, wz] = ll2w(lat, lon);
+  const grp = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+  const h = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.5), mat);
+  h.rotation.x = -Math.PI/2; h.position.set(0,0.05,0);
+  grp.add(h);
+  const v = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 2.4), mat);
+  v.rotation.x = -Math.PI/2; v.position.set(0,0.06,0);
+  grp.add(v);
+  makeLabel(`CASUALTY #${num}`, wx, 3, wz);
+  grp.position.set(wx,0,wz);
+  disGroup(grp); scene.add(grp);
+}
+
+// ── Disaster scene layout ──
+// Flood: south campus low-lying (near road/drainage)
+const floodWater1 = addFlood(29.1912, -81.0510, 200, 100);
+const floodWater2 = addFlood(29.1908, -81.0480, 120,  70);
+
+// Fire: Hangar Charlie (hit by debris) + nearby fuel spill
+addFire(29.1944, -81.0460, 14, 5, 8);
+addSmoke(29.1944,-81.0460, 16, 12);
+addFire(29.1940, -81.0458,  0, 3, 5);   // ground fuel fire
+
+// Partial damage fire: COAS building roof
+addFire(29.1933, -81.0520, 14, 3, 4);
+addSmoke(29.1933,-81.0520, 16, 8);
+
+// Debris fields
+addDebrisField(29.1945, -81.0455, 40, 50);   // near hangars
+addDebrisField(29.1919, -81.0512, 25, 35);   // south campus road
+addDebrisField(29.1938, -81.0500, 18, 28);   // central quad
+
+// Downed trees
+addDownedTree(29.1925, -81.0500);
+addDownedTree(29.1930, -81.0500);
+addDownedTree(29.1935, -81.0500);
+addDownedTree(29.1916, -81.0498);
+
+// Hurricane shelters (Student Union & Rec Center converted)
+addShelterTent(29.1915, -81.0510, '⛺ SHELTER ALPHA');
+addShelterTent(29.1920, -81.0500, '⛺ SHELTER BRAVO');
+addShelterTent(29.1957, -81.0490, '⛺ SHELTER CHARLIE (STAGING)');
+
+// Casualty markers
+addCasualtyMarker(29.1914, -81.0508, 1);
+addCasualtyMarker(29.1917, -81.0503, 2);
+addCasualtyMarker(29.1943, -81.0462, 3);
+
+// ── Update disaster animations ──
+function updateDisaster(dt) {
+  if (!disasterActive) return;
+  disasterTime += dt;
+  const t = disasterTime;
+
+  // Animate fire cones
+  fireGroups.forEach(grp => {
+    grp.children.forEach(child => {
+      if (child.userData.phase !== undefined) {
+        const flicker = Math.sin(t * 12 + child.userData.phase) * 0.3 + 0.9;
+        const sway    = Math.sin(t *  4 + child.userData.phase) * 0.08;
+        child.scale.set(flicker, flicker * (0.85 + Math.sin(t*8+child.userData.phase)*0.15), flicker);
+        child.rotation.z = sway;
+        // Shift colour orange ↔ red
+        const r = 1.0;
+        const g = 0.2 + 0.3 * Math.abs(Math.sin(t * 6 + child.userData.phase));
+        child.material.color.setRGB(r, g, 0);
+      }
+    });
+  });
+
+  // Rise smoke
+  smokeParticles.forEach(grp => {
+    grp.children.forEach(sp => {
+      sp.position.y += sp.userData.riseSpeed * dt;
+      sp.position.x += sp.userData.drift.x * dt;
+      sp.position.z += sp.userData.drift.z * dt;
+      sp.material.opacity = Math.max(0, sp.material.opacity - 0.008 * dt);
+      // reset when too high or invisible
+      if (sp.position.y > sp.userData.maxY || sp.material.opacity <= 0) {
+        sp.position.y = sp.userData.baseY;
+        sp.position.x = (Math.random()-0.5)*2;
+        sp.position.z = (Math.random()-0.5)*2;
+        sp.material.opacity = 0.4;
+      }
+    });
+  });
+
+  // Water ripple — subtle vertical bob
+  [floodWater1, floodWater2].forEach(w => {
+    w.position.y = w.userData.baseY + Math.sin(t * 0.8) * 0.08;
+    w.material.opacity = 0.45 + 0.1 * Math.sin(t * 1.2);
+  });
+}
+
+// ── Disaster toggle ──
+function toggleDisaster() {
+  disasterActive = !disasterActive;
+  disasterObjects.forEach(o => o.visible = disasterActive);
+  showToast(disasterActive ? '⚠ DISASTER MODE ON' : 'DISASTER MODE OFF');
+  // Reset smoke opacity on re-enable
+  if (disasterActive) {
+    smokeParticles.forEach(grp => grp.children.forEach(sp => { sp.material.opacity = 0.4; }));
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  eVTOL 3D MODEL
+// ═══════════════════════════════════════════════
+const evtolGroup = new THREE.Group();
+scene.add(evtolGroup);
+
+// Body
+const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1a4080 });
+const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 0.9), bodyMat);
+evtolGroup.add(body);
+
+// Top dome
+const domeMat = new THREE.MeshLambertMaterial({ color: 0x2a5faa, transparent: true, opacity: 0.85 });
+const dome = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
+dome.position.y = 0.22;
+evtolGroup.add(dome);
+
+// Camera pod (belly)
+const camPodMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
+const camPod = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), camPodMat);
+camPod.position.y = -0.3;
+evtolGroup.add(camPod);
+
+// Arms + rotors
+const armMat   = new THREE.MeshLambertMaterial({ color: 0x2a3a5a });
+const motorMat = new THREE.MeshLambertMaterial({ color: 0x0a1a30 });
+const rotorMat = new THREE.MeshLambertMaterial({ color: 0x88bbdd, transparent: true, opacity: 0.65 });
+
+const rotorMeshes = [];
+const ARM_DIRS = [[-1,-1],[1,-1],[-1,1],[1,1]];
+
+ARM_DIRS.forEach(([sx, sz]) => {
+  // Arm
+  const armLen = 1.65;
+  const armGeo = new THREE.BoxGeometry(0.1, 0.1, armLen);
+  const arm = new THREE.Mesh(armGeo, armMat);
+  arm.position.set(sx * 0.65, 0.05, sz * 0.65);
+  arm.rotation.y = Math.atan2(sx, sz);
+  evtolGroup.add(arm);
+
+  const motorPos = new THREE.Vector3(sx * 1.25, 0.1, sz * 1.25);
+
+  // Motor
+  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 10), motorMat);
+  motor.position.copy(motorPos);
+  evtolGroup.add(motor);
+
+  // Rotor disc
+  const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.03, 16), rotorMat);
+  rotor.position.copy(motorPos).add(new THREE.Vector3(0, 0.12, 0));
+  evtolGroup.add(rotor);
+  rotorMeshes.push({ mesh: rotor, dir: sx * sz > 0 ? 1 : -1 });
+});
+
+// Landing legs
+const legMat = new THREE.MeshLambertMaterial({ color: 0x223355 });
+[[-0.5,-0.5],[0.5,-0.5],[-0.5,0.5],[0.5,0.5]].forEach(([lx,lz]) => {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 6), legMat);
+  leg.position.set(lx * 0.9, -0.42, lz * 0.9);
+  evtolGroup.add(leg);
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.06), legMat);
+  foot.position.set(lx * 0.9, -0.62, lz * 0.9);
+  evtolGroup.add(foot);
+});
+
+// Nav lights
+function makeLight(color) {
+  const m = new THREE.MeshBasicMaterial({ color });
+  return new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), m);
+}
+const navRed   = makeLight(0xff2222);
+const navGreen = makeLight(0x00ff44);
+const navWhite = makeLight(0xffffff);
+navRed.position.set(-1.25,  0.1, -1.25);
+navGreen.position.set( 1.25, 0.1, -1.25);
+navWhite.position.set(0, 0.25, 1.1);
+evtolGroup.add(navRed, navGreen, navWhite);
+
+// ─ Scan beam cone ─
+const beamGeo = new THREE.ConeGeometry(0.8, 3, 12, 1, true);
+const beamMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+const beam = new THREE.Mesh(beamGeo, beamMat);
+beam.position.y = -2.0;
+beam.rotation.x = Math.PI;
+evtolGroup.add(beam);
+
+// ═══════════════════════════════════════════════
+//  FLIGHT STATE
+// ═══════════════════════════════════════════════
+const F = {
+  x: 0, y: 30, z: 0,      // world position (metres from origin)
+  heading: 0,               // degrees, 0=north
+  speed: 0,                 // m/s (forward)
+  vspeed: 0,                // m/s (vertical)
+  speedMult: 1.0,           // 0.5 – 3.0
+};
+
+const MAX_SPEED  = 22;   // m/s
+const MAX_VSPEED = 8;
+const ACCEL      = 9;
+const TURN_RATE  = 75;   // deg/s
+
+// ═══════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════
+const keys = {};
+let camMode = 'fpv'; // 'fpv' | 'chase' | 'map'
+
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+
+  switch (e.code) {
+    case 'Digit1': camMode = 'fpv';   updateCamBadge(); break;
+    case 'Digit2': camMode = 'chase'; updateCamBadge(); break;
+    case 'Digit3': camMode = 'map';   updateCamBadge(); break;
+    case 'KeyR':   resetFlight(); break;
+    case 'KeyX':   toggleDisaster(); break;
+    case 'Equal':
+    case 'NumpadAdd':
+      F.speedMult = Math.min(3.0, F.speedMult + 0.5);
+      showToast(`SPEED MULT ${F.speedMult.toFixed(1)}×`);
+      break;
+    case 'Minus':
+    case 'NumpadSubtract':
+      F.speedMult = Math.max(0.5, F.speedMult - 0.5);
+      showToast(`SPEED MULT ${F.speedMult.toFixed(1)}×`);
+      break;
+  }
+
+  // Prevent page scroll on arrow/space
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function updateCamBadge() {
+  const names = { fpv:'FPV COCKPIT', chase:'CHASE CAM', map:'MAP VIEW' };
+  document.getElementById('cam-mode-name').textContent = names[camMode];
+}
+
+function showToast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(0,0,0,0.75);border:1px solid #1e90ff;color:#7ecfff;' +
+      'font-family:Courier New;font-size:12px;letter-spacing:2px;padding:6px 16px;' +
+      'border-radius:4px;z-index:50;pointer-events:none;transition:opacity 0.4s;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.opacity = '0', 1800);
+}
+
+// ═══════════════════════════════════════════════
+//  PHYSICS UPDATE
+// ═══════════════════════════════════════════════
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+function headingToCompass(h) {
+  return COMPASS[Math.round(((h % 360) + 360) % 360 / 22.5) % 16];
+}
+
+let warnTimer = null;
+
+function updateFlight(dt) {
+  const maxSpd = MAX_SPEED * F.speedMult;
+
+  // Forward / backward
+  if (keys['ArrowUp']   || keys['KeyW']) {
+    F.speed = Math.min(F.speed + ACCEL * dt, maxSpd);
+  } else if (keys['ArrowDown'] || keys['KeyS']) {
+    F.speed = Math.max(F.speed - ACCEL * 1.8 * dt, -maxSpd * 0.4);
+  } else {
+    // Friction
+    const fric = F.speed > 0 ? -1 : 1;
+    F.speed += fric * Math.min(Math.abs(F.speed), 5 * dt);
+    if (Math.abs(F.speed) < 0.05) F.speed = 0;
+  }
+
+  // Yaw
+  if (keys['ArrowLeft']  || keys['KeyA']) F.heading -= TURN_RATE * dt;
+  if (keys['ArrowRight'] || keys['KeyD']) F.heading += TURN_RATE * dt;
+  F.heading = ((F.heading % 360) + 360) % 360;
+
+  // Vertical
+  if (keys['Space']) {
+    F.vspeed = Math.min(F.vspeed + 7 * dt, MAX_VSPEED * F.speedMult);
+  } else if (keys['ShiftLeft'] || keys['ShiftRight']) {
+    F.vspeed = Math.max(F.vspeed - 7 * dt, -MAX_VSPEED * F.speedMult);
+  } else {
+    const vfric = F.vspeed > 0 ? -1 : 1;
+    F.vspeed += vfric * Math.min(Math.abs(F.vspeed), 4 * dt);
+    if (Math.abs(F.vspeed) < 0.04) F.vspeed = 0;
+  }
+
+  // Strafe
+  let strafe = 0;
+  if (keys['KeyQ']) strafe = -10 * F.speedMult;
+  if (keys['KeyE']) strafe =  10 * F.speedMult;
+
+  // Move (heading 0=north=-Z, heading 90=east=+X)
+  const hRad = F.heading * Math.PI / 180;
+  const fwdX =  Math.sin(hRad);
+  const fwdZ = -Math.cos(hRad);
+  const rtX  =  Math.cos(hRad);
+  const rtZ  =  Math.sin(hRad);
+
+  F.x += (fwdX * F.speed + rtX * strafe) * dt;
+  F.z += (fwdZ * F.speed + rtZ * strafe) * dt;
+  F.y += F.vspeed * dt;
+
+  // Clamp + boundary warning
+  const atEdge =
+    F.x < -HALF_GRID_M || F.x > HALF_GRID_M ||
+    F.z < -HALF_GRID_M || F.z > HALF_GRID_M;
+
+  F.x = Math.max(-HALF_GRID_M, Math.min(HALF_GRID_M, F.x));
+  F.z = Math.max(-HALF_GRID_M, Math.min(HALF_GRID_M, F.z));
+  F.y = Math.max(MIN_ALT, Math.min(MAX_ALT, F.y));
+
+  if (atEdge) {
+    F.speed  *= 0.4;
+    document.getElementById('warn').style.background = 'rgba(255,50,0,0.18)';
+    clearTimeout(warnTimer);
+    warnTimer = setTimeout(() => {
+      document.getElementById('warn').style.background = 'rgba(255,50,0,0)';
+    }, 200);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  eVTOL VISUALS UPDATE
+// ═══════════════════════════════════════════════
+let blinkT = 0;
+
+function updateEvtol(dt) {
+  evtolGroup.position.set(F.x, F.y, F.z);
+  evtolGroup.rotation.y = -F.heading * Math.PI / 180;
+
+  // Slight bank on yaw
+  const bankDir = (keys['ArrowRight']||keys['KeyD']) ? -1 : (keys['ArrowLeft']||keys['KeyA']) ? 1 : 0;
+  evtolGroup.rotation.z = THREE.MathUtils.lerp(evtolGroup.rotation.z, bankDir * 0.18, 0.08);
+
+  // Slight pitch on forward
+  const pitchDir = F.speed > 0.5 ? 1 : F.speed < -0.5 ? -1 : 0;
+  evtolGroup.rotation.x = THREE.MathUtils.lerp(evtolGroup.rotation.x, pitchDir * 0.12, 0.06);
+
+  // Spin rotors
+  const rpm = 0.2 + Math.abs(F.speed) * 0.015 + Math.abs(F.vspeed) * 0.03;
+  rotorMeshes.forEach(r => { r.mesh.rotation.y += r.dir * rpm; });
+
+  // Nav light blink
+  blinkT += dt;
+  const blink = Math.sin(blinkT * 5) > 0;
+  navRed.visible   = blink;
+  navGreen.visible = blink;
+  navWhite.visible = Math.sin(blinkT * 2) > 0.5;
+
+  // Beam intensity
+  beam.material.opacity = 0.08 + 0.06 * Math.sin(blinkT * 3);
+}
+
+// ═══════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════
+const chaseCamPos = new THREE.Vector3();
+
+function updateCamera() {
+  const hRad = F.heading * Math.PI / 180;
+
+  if (camMode === 'fpv') {
+    // Cockpit: sit inside the body, look forward
+    const pitchRad = -(F.speed / MAX_SPEED) * 0.12; // slight nose-down tilt
+    camera.position.set(F.x, F.y + 0.6, F.z);
+    const lookX = F.x + Math.sin(hRad) * 500;
+    const lookZ = F.z - Math.cos(hRad) * 500;
+    const lookY = F.y + 0.6 + Math.tan(pitchRad) * 500;
+    camera.lookAt(lookX, lookY, lookZ);
+
+    // Hide eVTOL body in FPV (you're inside it)
+    evtolGroup.visible = false;
+
+  } else if (camMode === 'chase') {
+    evtolGroup.visible = true;
+    // Behind and above
+    const backX = -Math.sin(hRad) * 14;
+    const backZ =  Math.cos(hRad) * 14;
+    chaseCamPos.set(F.x + backX, F.y + 6, F.z + backZ);
+    camera.position.lerp(chaseCamPos, 0.1);
+    camera.lookAt(F.x, F.y + 1, F.z);
+
+  } else { // map
+    evtolGroup.visible = true;
+    camera.position.set(F.x, F.y + 180, F.z);
+    camera.lookAt(F.x, F.y, F.z);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  HUD UPDATE
+// ═══════════════════════════════════════════════
+function updateHUD() {
+  const spd_kt = Math.round(Math.abs(F.speed) * 1.944);
+  const hdg    = Math.round(F.heading);
+  const alt    = Math.round(F.y);
+  const ll     = worldToLatLon(F.x, F.z);
+
+  document.getElementById('spd-val').textContent   = spd_kt;
+  document.getElementById('gspd-val').textContent  = Math.abs(F.speed).toFixed(1) + ' m/s';
+  document.getElementById('alt-val').textContent   = alt;
+  document.getElementById('vspd-val').textContent  = (F.vspeed >= 0 ? '+' : '') + F.vspeed.toFixed(1) + ' m/s';
+
+  const hdgStr = String(hdg).padStart(3, '0');
+  document.getElementById('hdg-num').textContent   = hdgStr + '°';
+  document.getElementById('hdg-bar').textContent   = headingToCompass(hdg);
+  document.getElementById('heading-val').textContent = 'HDG ' + hdgStr;
+  document.getElementById('heading-compass').textContent = headingToCompass(hdg);
+
+  document.getElementById('m-lat').textContent     = ll.lat.toFixed(5);
+  document.getElementById('m-lon').textContent     = ll.lon.toFixed(5);
+  document.getElementById('m-alt').textContent     = alt + ' m';
+
+  // Speed colour
+  const spdEl = document.getElementById('spd-val');
+  spdEl.style.color = spd_kt > 40 ? '#ff9944' : spd_kt > 20 ? '#ffdd44' : '#fff';
+
+  // Alt colour
+  const altEl = document.getElementById('alt-val');
+  altEl.style.color = alt < 10 ? '#ff4444' : alt > 200 ? '#ff9944' : '#fff';
+}
+
+// ═══════════════════════════════════════════════
+//  MINI-MAP
+// ═══════════════════════════════════════════════
+const mmCanvas = document.getElementById('minimap');
+const mmCtx    = mmCanvas.getContext('2d');
+const MM_W     = mmCanvas.width;
+const MM_H     = mmCanvas.height;
+const MM_SCALE = MM_W / (HALF_GRID_M * 2); // pixels per metre
+
+function drawMinimap() {
+  mmCtx.clearRect(0, 0, MM_W, MM_H);
+
+  // BG
+  mmCtx.fillStyle = 'rgba(5,10,20,0.85)';
+  mmCtx.fillRect(0, 0, MM_W, MM_H);
+
+  // Grid lines
+  mmCtx.strokeStyle = 'rgba(0,150,255,0.2)';
+  mmCtx.lineWidth = 0.5;
+  for (let i = 0; i <= GRID_N; i++) {
+    const px = i * (MM_W / GRID_N);
+    mmCtx.beginPath(); mmCtx.moveTo(px, 0); mmCtx.lineTo(px, MM_H); mmCtx.stroke();
+    mmCtx.beginPath(); mmCtx.moveTo(0, px); mmCtx.lineTo(MM_W, px); mmCtx.stroke();
+  }
+
+  // Origin cross
+  mmCtx.strokeStyle = 'rgba(0,255,200,0.3)';
+  mmCtx.lineWidth = 1;
+  mmCtx.beginPath(); mmCtx.moveTo(MM_W/2, 0); mmCtx.lineTo(MM_W/2, MM_H); mmCtx.stroke();
+  mmCtx.beginPath(); mmCtx.moveTo(0, MM_H/2); mmCtx.lineTo(MM_W, MM_H/2); mmCtx.stroke();
+
+  // Boundary box
+  mmCtx.strokeStyle = 'rgba(255,80,0,0.6)';
+  mmCtx.lineWidth = 1.5;
+  mmCtx.strokeRect(2, 2, MM_W-4, MM_H-4);
+
+  // eVTOL position
+  const px = (F.x / (HALF_GRID_M * 2) + 0.5) * MM_W;
+  const py = (F.z / (HALF_GRID_M * 2) + 0.5) * MM_H;
+
+  // Heading line
+  const hRad = F.heading * Math.PI / 180;
+  const lineLen = 14;
+  mmCtx.strokeStyle = '#00ffcc';
+  mmCtx.lineWidth = 1.5;
+  mmCtx.beginPath();
+  mmCtx.moveTo(px, py);
+  mmCtx.lineTo(px + Math.sin(hRad) * lineLen, py - Math.cos(hRad) * lineLen);
+  mmCtx.stroke();
+
+  // Dot
+  const altFrac = Math.min(1, F.y / MAX_ALT);
+  const r = Math.max(3, 5 - altFrac * 2);
+  mmCtx.beginPath();
+  mmCtx.arc(px, py, r + 3, 0, Math.PI * 2);
+  mmCtx.fillStyle = `rgba(0,200,255,${0.2 + altFrac * 0.2})`;
+  mmCtx.fill();
+
+  mmCtx.beginPath();
+  mmCtx.arc(px, py, r, 0, Math.PI * 2);
+  mmCtx.fillStyle = '#00e8ff';
+  mmCtx.fill();
+  mmCtx.strokeStyle = '#fff';
+  mmCtx.lineWidth = 1;
+  mmCtx.stroke();
+
+  // North indicator
+  mmCtx.fillStyle = 'rgba(0,200,255,0.8)';
+  mmCtx.font = '8px Courier New';
+  mmCtx.fillText('N', MM_W/2 - 3, 10);
+  mmCtx.fillText('S', MM_W/2 - 3, MM_H - 3);
+  mmCtx.fillText('W', 2, MM_H/2 + 3);
+  mmCtx.fillText('E', MM_W - 9, MM_H/2 + 3);
+}
+
+// ═══════════════════════════════════════════════
+//  RESET
+// ═══════════════════════════════════════════════
+function resetFlight() {
+  F.x = 0; F.y = 30; F.z = 0;
+  F.heading = 0;
+  F.speed   = 0;
+  F.vspeed  = 0;
+  showToast('POSITION RESET');
+}
+
+// ═══════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════
+let lastTime = null;
+let running  = false;
+
+function animate(ts) {
+  if (!running) return;
+  requestAnimationFrame(animate);
+
+  const dt = Math.min((ts - (lastTime || ts)) / 1000, 0.05);
+  lastTime = ts;
+
+  updateFlight(dt);
+  updateEvtol(dt);
+  updateDisaster(dt);
+  updateCamera();
+  updateHUD();
+  drawMinimap();
+
+  renderer.render(scene, camera);
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  running = true;
+  requestAnimationFrame(animate);
+}
+
+// ═══════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+loadTiles();
+updateCamBadge();
+</script>
+</body>
+</html>
