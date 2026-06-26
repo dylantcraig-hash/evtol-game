@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>eVTOL FPV — ERAU Daytona Beach</title>
+<title>eVTOL FPV — ERAU Daytona Beach + KDAB</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#000; overflow:hidden; font-family:'Courier New',monospace; }
@@ -89,6 +89,45 @@ canvas#c { display:block; }
 }
 #cam-mode-name { color:#fff; font-weight:bold; font-size:13px; }
 
+/* Drone badge */
+#drone-badge {
+  position:absolute; top:56px; right:16px;
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:6px 14px; color:#4af; font-size:11px; letter-spacing:1px;
+}
+#drone-name { font-weight:bold; font-size:13px; }
+
+/* MQTT status */
+#mqtt-status {
+  position:absolute; top:96px; right:16px;
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.4);
+  border-radius:4px; padding:6px 14px; color:#4af; font-size:10px; letter-spacing:1px;
+}
+#mqtt-dot {
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  background:#ff4444; margin-right:6px; vertical-align:middle;
+}
+
+/* MQTT settings panel */
+#mqtt-panel {
+  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  background:rgba(0,10,25,0.95); border:2px solid #1e90ff; border-radius:8px;
+  padding:20px 28px; z-index:200; min-width:360px;
+  pointer-events:auto; color:#7ecfff; font-size:12px;
+}
+#mqtt-panel h3 { color:#1e90ff; margin-bottom:12px; letter-spacing:2px; font-size:14px; }
+#mqtt-panel input {
+  width:100%; padding:6px 10px; background:rgba(0,30,60,0.8); border:1px solid #1e90ff;
+  color:#fff; font-family:'Courier New',monospace; font-size:12px; border-radius:3px;
+  margin:6px 0 12px;
+}
+#mqtt-panel button {
+  padding:6px 18px; background:rgba(30,144,255,0.2); border:1px solid #1e90ff;
+  color:#fff; font-family:'Courier New',monospace; font-size:11px; cursor:pointer;
+  border-radius:3px; margin-right:8px; letter-spacing:1px;
+}
+#mqtt-panel button:hover { background:rgba(30,144,255,0.4); }
+
 /* ── Mini-map ── */
 #minimap-wrap {
   position:fixed; bottom:20px; right:20px; z-index:10;
@@ -142,6 +181,14 @@ canvas#c { display:block; }
 #load-bar-wrap { width:300px; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; }
 #load-bar { height:100%; background:#1e90ff; border-radius:3px; width:0%; transition:width 0.3s; }
 #load-status { color:#4a8fc0; font-size:11px; }
+
+/* Wind indicator */
+#wind-indicator {
+  position:absolute; bottom:80px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.6); border:1px solid rgba(0,200,255,0.3);
+  border-radius:4px; padding:4px 12px; color:#4af; font-size:10px;
+  letter-spacing:1px; display:none;
+}
 </style>
 </head>
 <body>
@@ -189,40 +236,67 @@ canvas#c { display:block; }
 
   <!-- Mission data top-left -->
   <div id="mission-data">
-    <div class="row"><span class="lbl">LAT</span><span class="val" id="m-lat">29.1939</span></div>
-    <div class="row"><span class="lbl">LON</span><span class="val" id="m-lon">-81.0514</span></div>
+    <div class="row"><span class="lbl">LAT</span><span class="val" id="m-lat">29.1869</span></div>
+    <div class="row"><span class="lbl">LON</span><span class="val" id="m-lon">-81.0548</span></div>
     <div class="row"><span class="lbl">ALT</span><span class="val" id="m-alt">30 m</span></div>
-    <div class="row"><span class="lbl">AREA</span><span class="val" id="m-area">ERAU CAMPUS</span></div>
+    <div class="row"><span class="lbl">AREA</span><span class="val" id="m-area">ERAU / KDAB</span></div>
   </div>
 
   <!-- Camera badge -->
   <div id="cam-badge">
     CAM: <span id="cam-mode-name">FPV</span>
   </div>
+
+  <!-- Drone badge -->
+  <div id="drone-badge">
+    DRONE: <span id="drone-name" style="color:#4af;">1 — BLUE</span>
+  </div>
+
+  <!-- MQTT status -->
+  <div id="mqtt-status">
+    <span id="mqtt-dot"></span>MQTT: <span id="mqtt-state">DISCONNECTED</span>
+  </div>
+
+  <!-- Wind indicator -->
+  <div id="wind-indicator" id="wind-info"></div>
+</div>
+
+<!-- MQTT Settings Panel -->
+<div id="mqtt-panel">
+  <h3>MQTT SETTINGS</h3>
+  <label>Broker URL:</label>
+  <input id="mqtt-url" type="text" value="wss://broker.hivemq.com:8884/mqtt" />
+  <label>Topics (auto-subscribed):</label>
+  <div style="color:#4af;font-size:10px;margin:4px 0 12px;line-height:1.8;">
+    evtol/weather · evtol/landmarks · evtol/environment
+  </div>
+  <button onclick="connectMQTT()">CONNECT</button>
+  <button onclick="disconnectMQTT()">DISCONNECT</button>
+  <button onclick="toggleMQTTPanel()">CLOSE</button>
 </div>
 
 <!-- Mini-map -->
 <div id="minimap-wrap" style="position:fixed;bottom:20px;right:20px;z-index:10;">
-  <canvas id="minimap" width="160" height="160"></canvas>
-  <div id="minimap-label">ERAU · DAYTONA</div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="minimap-label">ERAU · KDAB</div>
 </div>
 
 <!-- Controls -->
 <div id="ctrl-legend">
   <div style="color:#7ecfff;font-size:11px;margin-bottom:6px;letter-spacing:1px;">CONTROLS</div>
-  <div class="row"><span class="key">↑W</span> Fly Forward</div>
-  <div class="row"><span class="key">↓S</span> Brake / Back</div>
-  <div class="row"><span class="key">←A</span> Yaw Left</div>
-  <div class="row"><span class="key">→D</span> Yaw Right</div>
+  <div class="row"><span class="key">W↑</span> Fly Forward</div>
+  <div class="row"><span class="key">S↓</span> Brake / Back</div>
+  <div class="row"><span class="key">A←</span> Yaw Left</div>
+  <div class="row"><span class="key">D→</span> Yaw Right</div>
   <div class="row"><span class="key">SPC</span> Ascend</div>
   <div class="row"><span class="key">SFT</span> Descend</div>
   <div class="row"><span class="key">Q E</span> Strafe L / R</div>
   <div style="height:1px;background:rgba(0,200,255,0.2);margin:4px 0;"></div>
-  <div class="row"><span class="key">1</span> FPV Cam</div>
-  <div class="row"><span class="key">2</span> Chase Cam</div>
-  <div class="row"><span class="key">3</span> Map Cam</div>
+  <div class="row"><span class="key">1-4</span> Switch Drone</div>
+  <div class="row"><span class="key">C</span> Cycle Camera</div>
   <div class="row"><span class="key">+−</span> Speed ×</div>
   <div class="row"><span class="key">R</span> Reset</div>
+  <div class="row"><span class="key">M</span> MQTT Settings</div>
   <div style="height:1px;background:rgba(0,200,255,0.2);margin:4px 0;"></div>
   <div class="row"><span class="key">X</span> <span style="color:#ff8844">Disaster Mode</span></div>
 </div>
@@ -233,35 +307,33 @@ canvas#c { display:block; }
 <!-- Startup overlay -->
 <div id="start-overlay">
   <h1>⬡ eVTOL FPV</h1>
-  <p>ERAU DAYTONA BEACH · SATELLITE MAP</p>
+  <p>ERAU DAYTONA BEACH + KDAB AIRPORT · SATELLITE MAP</p>
   <div id="load-bar-wrap"><div id="load-bar"></div></div>
   <div id="load-status">Loading satellite tiles…</div>
-  <p class="sub">Real Esri World Imagery · 7×7 tile grid · ~930 m × 930 m boundary</p>
+  <p class="sub">Esri World Imagery · 11×11 tile grid · ~2.7 km boundary · 4 Drones · MQTT</p>
   <button id="start-btn" style="display:none" onclick="startGame()">▶ LAUNCH</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
 <script>
 'use strict';
 
 // ═══════════════════════════════════════════════
-//  CONSTANTS
+//  CONSTANTS — recentered to cover ERAU + KDAB
 // ═══════════════════════════════════════════════
-const ORIGIN_LAT =  29.1939;
-const ORIGIN_LON = -81.0514;
-const TILE_Z     = 18;
-const GRID_HALF  = 3;        // 7×7 grid
-const GRID_N     = GRID_HALF * 2 + 1; // 7
+const ORIGIN_LAT =  29.1869;
+const ORIGIN_LON = -81.0548;
+const TILE_Z     = 17;
+const GRID_HALF  = 5;
+const GRID_N     = GRID_HALF * 2 + 1; // 11
 
-// Tile size in metres at zoom 18, lat ~29.19°
 const TILE_M = 156543.03392 * Math.cos(ORIGIN_LAT * Math.PI / 180) / Math.pow(2, TILE_Z) * 256;
-// ≈ 133.6 m
 
-const HALF_GRID_M = GRID_HALF * TILE_M;   // boundary ±this from origin
-const MAX_ALT     = 300;
+const HALF_GRID_M = GRID_HALF * TILE_M;
+const MAX_ALT     = 500;
 const MIN_ALT     = 2;
 
-// Origin tile (x,y) at zoom 18
 function latLonToTileXY(lat, lon, z) {
   const n = Math.pow(2, z);
   const tx = Math.floor((lon + 180) / 360 * n);
@@ -271,12 +343,17 @@ function latLonToTileXY(lat, lon, z) {
 }
 const ORIGIN_TILE = latLonToTileXY(ORIGIN_LAT, ORIGIN_LON, TILE_Z);
 
-// World ↔ lat/lon
 function worldToLatLon(wx, wz) {
   return {
     lat: ORIGIN_LAT - wz / 111320,
     lon: ORIGIN_LON + wx / (111320 * Math.cos(ORIGIN_LAT * Math.PI / 180))
   };
+}
+
+function ll2w(lat, lon) {
+  const wx =  (lon - ORIGIN_LON) * 111320 * Math.cos(ORIGIN_LAT * Math.PI / 180);
+  const wz = -(lat - ORIGIN_LAT) * 111320;
+  return [wx, wz];
 }
 
 // ═══════════════════════════════════════════════
@@ -290,35 +367,27 @@ renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x6ba3d6);
-scene.fog = new THREE.FogExp2(0x8bbfe0, 0.0008);
+scene.fog = new THREE.FogExp2(0x8bbfe0, 0.0004);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.5, 3000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.5, 6000);
 camera.position.set(0, 30, 0);
 
-// Lighting
 scene.add(new THREE.AmbientLight(0xffffff, 1.2));
 const sun = new THREE.DirectionalLight(0xfff4e0, 0.8);
 sun.position.set(200, 500, 100);
 scene.add(sun);
 
-// ── Sky dome ──
-const skyGeo  = new THREE.SphereGeometry(2500, 16, 8);
-const skyMat  = new THREE.MeshBasicMaterial({
-  color: 0x7ab8e8, side: THREE.BackSide
-});
+const skyGeo  = new THREE.SphereGeometry(5000, 16, 8);
+const skyMat  = new THREE.MeshBasicMaterial({ color: 0x7ab8e8, side: THREE.BackSide });
 scene.add(new THREE.Mesh(skyGeo, skyMat));
 
-// Horizon haze plane
-const hazeGeo = new THREE.PlaneGeometry(5000, 5000);
+const hazeGeo = new THREE.PlaneGeometry(10000, 10000);
 hazeGeo.rotateX(-Math.PI / 2);
-const hazeMat = new THREE.MeshBasicMaterial({
-  color: 0x5090b0, transparent: true, opacity: 0.18, depthWrite: false
-});
+const hazeMat = new THREE.MeshBasicMaterial({ color: 0x5090b0, transparent: true, opacity: 0.18, depthWrite: false });
 const hazePlane = new THREE.Mesh(hazeGeo, hazeMat);
 hazePlane.position.y = 0.5;
 scene.add(hazePlane);
 
-// ── Ground fill (between tiles) ──
 const groundGeo = new THREE.PlaneGeometry(TILE_M * GRID_N * 2, TILE_M * GRID_N * 2);
 groundGeo.rotateX(-Math.PI / 2);
 const groundMat = new THREE.MeshBasicMaterial({ color: 0x3a6e3a });
@@ -331,12 +400,11 @@ scene.add(ground);
 // ═══════════════════════════════════════════════
 const tileLoader = new THREE.TextureLoader();
 tileLoader.crossOrigin = 'anonymous';
-
 const tileGroup  = new THREE.Group();
 scene.add(tileGroup);
 
 let tilesLoaded  = 0;
-const TOTAL_TILES = GRID_N * GRID_N;  // 49
+const TOTAL_TILES = GRID_N * GRID_N;
 
 function loadTiles() {
   for (let dy = -GRID_HALF; dy <= GRID_HALF; dy++) {
@@ -347,7 +415,6 @@ function loadTiles() {
 
       const geo = new THREE.PlaneGeometry(TILE_M, TILE_M);
       geo.rotateX(-Math.PI / 2);
-
       const mat = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
 
       tileLoader.load(
@@ -367,7 +434,6 @@ function loadTiles() {
         },
         undefined,
         () => {
-          // On error: grey placeholder
           mat.color = new THREE.Color(0x334455);
           tilesLoaded++;
           if (tilesLoaded >= TOTAL_TILES) {
@@ -377,16 +443,15 @@ function loadTiles() {
       );
 
       const mesh = new THREE.Mesh(geo, mat);
-      // +dx = east (+X), +dy = south (+Z)
       mesh.position.set(dx * TILE_M, 0, dy * TILE_M);
       tileGroup.add(mesh);
     }
   }
 }
 
-// ── Boundary walls (invisible collision) ──
+// ── Boundary walls ──
 function addBoundaryMarkers() {
-  const wallH  = 80;
+  const wallH  = 120;
   const wallW  = GRID_HALF * 2 * TILE_M;
   const wallMat = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.0, side: THREE.DoubleSide });
   const wallPositions = [
@@ -405,7 +470,6 @@ function addBoundaryMarkers() {
 }
 addBoundaryMarkers();
 
-// ── Boundary warning poles (visible markers) ──
 function addBoundaryPoles() {
   const poleMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
   const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 30, 6);
@@ -426,15 +490,6 @@ addBoundaryPoles();
 // ═══════════════════════════════════════════════
 //  CAMPUS BUILDINGS
 // ═══════════════════════════════════════════════
-
-// Convert lat/lon offset to world metres from ORIGIN
-function ll2w(lat, lon) {
-  const wx =  (lon - ORIGIN_LON) * 111320 * Math.cos(ORIGIN_LAT * Math.PI / 180);
-  const wz = -(lat - ORIGIN_LAT) * 111320;
-  return [wx, wz];
-}
-
-// Sprite label above building
 function makeLabel(text, wx, height, wz) {
   const cv = document.createElement('canvas');
   cv.width = 256; cv.height = 48;
@@ -457,7 +512,6 @@ function makeLabel(text, wx, height, wz) {
   scene.add(sp);
 }
 
-// Window-stripe texture for building facades
 function makeBuildingTex(baseHex, windowHex, floors) {
   const cv = document.createElement('canvas');
   cv.width = 64; cv.height = 128;
@@ -485,13 +539,11 @@ function addBuilding(lat, lon, w, h, d, colorHex, roofHex, label, floors=4) {
   mesh.position.set(wx, h / 2, wz);
   scene.add(mesh);
 
-  // Roof slab
   const roofMat = new THREE.MeshLambertMaterial({ color: roofHex });
   const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.6, d + 0.4), roofMat);
   roof.position.set(wx, h + 0.3, wz);
   scene.add(roof);
 
-  // HVAC/rooftop units (flat boxes)
   const hvacMat = new THREE.MeshLambertMaterial({ color: 0x445566 });
   [[0.3, 0.3],[-0.3, 0.0]].forEach(([ox, oz]) => {
     const hv = new THREE.Mesh(new THREE.BoxGeometry(w*0.2, 1.2, d*0.15), hvacMat);
@@ -499,7 +551,6 @@ function addBuilding(lat, lon, w, h, d, colorHex, roofHex, label, floors=4) {
     scene.add(hv);
   });
 
-  // Ground shadow
   const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(w + 2, d + 2), shadowMat);
   shadow.rotation.x = -Math.PI / 2;
@@ -511,26 +562,21 @@ function addBuilding(lat, lon, w, h, d, colorHex, roofHex, label, floors=4) {
 
 function addTower(lat, lon, baseW, height, label) {
   const [wx, wz] = ll2w(lat, lon);
-
-  // Base
   const baseMat = new THREE.MeshLambertMaterial({ color: 0x556677 });
   const base = new THREE.Mesh(new THREE.BoxGeometry(baseW, height * 0.55, baseW), baseMat);
   base.position.set(wx, height * 0.275, wz);
   scene.add(base);
 
-  // Glass cab at top
   const cabMat = new THREE.MeshLambertMaterial({ color: 0x88ccee, transparent: true, opacity: 0.8 });
   const cab = new THREE.Mesh(new THREE.BoxGeometry(baseW * 1.5, height * 0.18, baseW * 1.5), cabMat);
   cab.position.set(wx, height * 0.64, wz);
   scene.add(cab);
 
-  // Antenna spike
   const antMat = new THREE.MeshLambertMaterial({ color: 0xaabbcc });
   const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, height * 0.25, 6), antMat);
   ant.position.set(wx, height * 0.85, wz);
   scene.add(ant);
 
-  // Red aviation light on top
   const lightMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
   const light = new THREE.Mesh(new THREE.SphereGeometry(0.4, 6, 4), lightMat);
   light.position.set(wx, height, wz);
@@ -541,14 +587,11 @@ function addTower(lat, lon, baseW, height, label) {
 
 function addHangar(lat, lon, w, h, d, colorHex, label) {
   const [wx, wz] = ll2w(lat, lon);
-
-  // Main structure
   const wallMat = new THREE.MeshLambertMaterial({ color: colorHex });
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
   walls.position.set(wx, h / 2, wz);
   scene.add(walls);
 
-  // Arched roof (cylinder segment)
   const archGeo = new THREE.CylinderGeometry(w / 2 * 0.9, w / 2 * 0.9, d, 16, 1, false, 0, Math.PI);
   const archMat = new THREE.MeshLambertMaterial({ color: 0x556677 });
   const arch = new THREE.Mesh(archGeo, archMat);
@@ -556,13 +599,11 @@ function addHangar(lat, lon, w, h, d, colorHex, label) {
   arch.position.set(wx, h, wz);
   scene.add(arch);
 
-  // Hangar doors (darker stripe on front face)
   const doorMat = new THREE.MeshLambertMaterial({ color: 0x223344 });
   const door = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, h * 0.85, 0.5), doorMat);
   door.position.set(wx, h * 0.425, wz - d / 2 - 0.1);
   scene.add(door);
 
-  // Ground shadow
   const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(w + 3, d + 3), shadowMat);
   shadow.rotation.x = -Math.PI / 2;
@@ -580,7 +621,6 @@ function addApron(lat, lon, w, d) {
   apron.position.set(wx, 0.02, wz);
   scene.add(apron);
 
-  // Centerline stripe
   const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
   const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.5, d * 0.85), stripeMat);
   stripe.rotation.x = -Math.PI / 2;
@@ -589,7 +629,6 @@ function addApron(lat, lon, w, d) {
 }
 
 // ── ERAU Daytona Beach Campus Buildings ──
-// Academic core (west of Clyde Morris Blvd)
 addBuilding(29.1940, -81.0506,  52, 18,  38, 0xccb899, 0x444433, 'ICI CENTER',         5);
 addBuilding(29.1933, -81.0520,  34, 14,  26, 0xaabbcc, 0x334455, 'COAS BUILDING',      4);
 addBuilding(29.1930, -81.0508,  28, 12,  22, 0xbbaa99, 0x443322, 'ADMIN / MORI',       3);
@@ -598,7 +637,7 @@ addBuilding(29.1922, -81.0528,  24, 16,  20, 0xddccbb, 0x554433, 'AYERS HALL (DO
 addBuilding(29.1918, -81.0515,  30, 14,  24, 0xccddbb, 0x445533, 'STUDENT UNION',      4);
 addBuilding(29.1928, -81.0494,  20,  9,  18, 0xaabbaa, 0x334433, 'RIDDLE REC CENTER',  2);
 
-// Flight line area (east side, near DAB ramp)
+// ERAU Flight line
 addApron(29.1952, -81.0480, 180, 50);
 addHangar(29.1958, -81.0475,  36, 12,  28, 0x8899aa, 'HANGAR ALPHA');
 addHangar(29.1951, -81.0465,  40, 14,  32, 0x7a8a9a, 'HANGAR BRAVO');
@@ -606,21 +645,144 @@ addHangar(29.1944, -81.0460,  36, 12,  28, 0x889999, 'HANGAR CHARLIE');
 addTower( 29.1955, -81.0485,   6, 42,         'CONTROL TOWER');
 
 // ═══════════════════════════════════════════════
+//  KDAB — DAYTONA BEACH INTERNATIONAL AIRPORT
+// ═══════════════════════════════════════════════
+
+// Runway 7L/25R — heading ~070°, ~3000ft long section visible
+const RWY_HDG = 70;
+const RWY_HDG_RAD = RWY_HDG * Math.PI / 180;
+const RWY_LEN = 900;
+const RWY_WID = 45;
+const RWY_CENTER_LAT = 29.1799;
+const RWY_CENTER_LON = -81.0581;
+
+(function buildRunway() {
+  const [cx, cz] = ll2w(RWY_CENTER_LAT, RWY_CENTER_LON);
+
+  // Main runway surface
+  const rwyGeo = new THREE.PlaneGeometry(RWY_LEN, RWY_WID);
+  rwyGeo.rotateX(-Math.PI / 2);
+  const rwyMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+  const rwy = new THREE.Mesh(rwyGeo, rwyMat);
+  rwy.position.set(cx, 0.04, cz);
+  rwy.rotation.y = -RWY_HDG_RAD + Math.PI / 2;
+  scene.add(rwy);
+
+  // Centerline dashes
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const fwdX = Math.sin(RWY_HDG_RAD);
+  const fwdZ = -Math.cos(RWY_HDG_RAD);
+  for (let i = -RWY_LEN/2 + 30; i < RWY_LEN/2 - 30; i += 40) {
+    const dashGeo = new THREE.PlaneGeometry(20, 1);
+    dashGeo.rotateX(-Math.PI / 2);
+    const dash = new THREE.Mesh(dashGeo, dashMat);
+    dash.position.set(cx + fwdX * i, 0.05, cz + fwdZ * i);
+    dash.rotation.y = -RWY_HDG_RAD + Math.PI / 2;
+    scene.add(dash);
+  }
+
+  // Threshold markings (both ends)
+  [-1, 1].forEach(end => {
+    const tx = cx + fwdX * (end * RWY_LEN / 2 - end * 20);
+    const tz = cz + fwdZ * (end * RWY_LEN / 2 - end * 20);
+    const perpX = Math.cos(RWY_HDG_RAD);
+    const perpZ = Math.sin(RWY_HDG_RAD);
+    for (let s = -3; s <= 3; s++) {
+      const stripeGeo = new THREE.PlaneGeometry(30, 1.5);
+      stripeGeo.rotateX(-Math.PI / 2);
+      const stripe = new THREE.Mesh(stripeGeo, dashMat);
+      stripe.position.set(tx + perpX * s * 3, 0.05, tz + perpZ * s * 3);
+      stripe.rotation.y = -RWY_HDG_RAD + Math.PI / 2;
+      scene.add(stripe);
+    }
+  });
+
+  // Runway numbers
+  function makeRunwayNumber(text, px, pz) {
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 256;
+    const c2 = cv.getContext('2d');
+    c2.fillStyle = '#ffffff';
+    c2.font = 'bold 100px Courier New';
+    c2.textAlign = 'center';
+    c2.textBaseline = 'middle';
+    c2.fillText(text, 64, 128);
+    const tex = new THREE.CanvasTexture(cv);
+    const numGeo = new THREE.PlaneGeometry(12, 24);
+    numGeo.rotateX(-Math.PI / 2);
+    const num = new THREE.Mesh(numGeo, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    num.position.set(px, 0.06, pz);
+    num.rotation.y = -RWY_HDG_RAD + Math.PI / 2;
+    scene.add(num);
+  }
+  makeRunwayNumber('7L', cx - fwdX * (RWY_LEN/2 - 60), cz - fwdZ * (RWY_LEN/2 - 60));
+  makeRunwayNumber('25R', cx + fwdX * (RWY_LEN/2 - 60), cz + fwdZ * (RWY_LEN/2 - 60));
+
+  // Runway edge lights
+  const edgeLightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+  const blueLightMat = new THREE.MeshBasicMaterial({ color: 0x4488ff });
+  const perpX = Math.cos(RWY_HDG_RAD);
+  const perpZ = Math.sin(RWY_HDG_RAD);
+  for (let i = -RWY_LEN/2; i <= RWY_LEN/2; i += 30) {
+    [-1, 1].forEach(side => {
+      const lx = cx + fwdX * i + perpX * side * (RWY_WID/2 + 1);
+      const lz = cz + fwdZ * i + perpZ * side * (RWY_WID/2 + 1);
+      const light = new THREE.Mesh(new THREE.SphereGeometry(0.3, 4, 4), edgeLightMat);
+      light.position.set(lx, 0.3, lz);
+      scene.add(light);
+    });
+  }
+
+  // Taxiway from runway midpoint to terminal
+  const taxiGeo = new THREE.PlaneGeometry(200, 20);
+  taxiGeo.rotateX(-Math.PI / 2);
+  const taxiMat = new THREE.MeshBasicMaterial({ color: 0x3a3a3a });
+  const taxi = new THREE.Mesh(taxiGeo, taxiMat);
+  taxi.position.set(cx, 0.03, cz + 80);
+  scene.add(taxi);
+
+  // Taxiway blue edge lights
+  for (let i = -100; i <= 100; i += 20) {
+    [-1, 1].forEach(side => {
+      const bl = new THREE.Mesh(new THREE.SphereGeometry(0.2, 4, 4), blueLightMat);
+      bl.position.set(cx + i, 0.25, cz + 80 + side * 11);
+      scene.add(bl);
+    });
+  }
+})();
+
+// KDAB Terminal and Tower
+addBuilding(RWY_CENTER_LAT - 0.0015, RWY_CENTER_LON + 0.0005, 100, 14, 30, 0xaabbcc, 0x445566, 'KDAB TERMINAL', 3);
+addBuilding(RWY_CENTER_LAT - 0.0018, RWY_CENTER_LON + 0.0020,  40, 10, 20, 0x889999, 0x334444, 'KDAB CONCOURSE B', 2);
+addTower(RWY_CENTER_LAT - 0.0010, RWY_CENTER_LON + 0.0015, 8, 55, 'KDAB TOWER');
+
+// KDAB Apron
+addApron(RWY_CENTER_LAT - 0.0012, RWY_CENTER_LON + 0.0008, 120, 80);
+
+// Gate jetways
+(function buildJetways() {
+  const [tx, tz] = ll2w(RWY_CENTER_LAT - 0.0015, RWY_CENTER_LON + 0.0005);
+  const jwMat = new THREE.MeshLambertMaterial({ color: 0x667788 });
+  for (let i = -3; i <= 3; i++) {
+    const jw = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 18), jwMat);
+    jw.position.set(tx + i * 12, 5, tz - 24);
+    scene.add(jw);
+  }
+})();
+
+// ═══════════════════════════════════════════════
 //  POST-DISASTER SCENARIO OBJECTS
 // ═══════════════════════════════════════════════
 let disasterActive = false;
-const disasterObjects = [];   // toggled visible/invisible
-const fireGroups     = [];    // animated each frame
-const smokeParticles = [];    // animated each frame
+const disasterObjects = [];
+const fireGroups     = [];
+const smokeParticles = [];
 let   disasterTime   = 0;
 
-// ── Utility: toggle visibility ──
 function disGroup(obj) { disasterObjects.push(obj); obj.visible = false; return obj; }
 
-// ── Flood zones (blue water planes) ──
 function addFlood(lat, lon, w, d) {
   const [wx, wz] = ll2w(lat, lon);
-  // ripple-ring glow underneath
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x002255, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(w + 8, d + 8), glowMat);
   glow.rotation.x = -Math.PI / 2;
@@ -636,11 +798,9 @@ function addFlood(lat, lon, w, d) {
   return water;
 }
 
-// ── Fire (animated cones + glow point-light) ──
 function addFire(lat, lon, baseAlt, size, count) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
-
   for (let i = 0; i < count; i++) {
     const h   = size * (0.7 + Math.random() * 0.8);
     const r   = size * (0.25 + Math.random() * 0.15);
@@ -652,14 +812,12 @@ function addFire(lat, lon, baseAlt, size, count) {
     cone.userData.height = h;
     grp.add(cone);
   }
-  // inner brighter core
   const coreMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.6 });
   const core = new THREE.Mesh(new THREE.ConeGeometry(size * 0.18, size * 0.7, 6), coreMat);
   core.position.set(0, baseAlt + size * 0.35, 0);
   core.userData.phase = 0; core.userData.height = size * 0.7;
   grp.add(core);
 
-  // glow light
   const pl = new THREE.PointLight(0xff6600, 2.5, size * 12);
   pl.position.set(0, baseAlt + size * 0.8, 0);
   grp.add(pl);
@@ -670,7 +828,6 @@ function addFire(lat, lon, baseAlt, size, count) {
   return grp;
 }
 
-// ── Smoke column (rising spheres) ──
 function addSmoke(lat, lon, baseAlt, count) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
@@ -691,7 +848,6 @@ function addSmoke(lat, lon, baseAlt, count) {
   return grp;
 }
 
-// ── Debris field (scattered rubble boxes) ──
 function addDebrisField(lat, lon, count, spread) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
@@ -712,11 +868,9 @@ function addDebrisField(lat, lon, count, spread) {
   return grp;
 }
 
-// ── Downed trees ──
 function addDownedTree(lat, lon) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
-  // trunk (lying on side)
   const trunk = new THREE.Mesh(
     new THREE.CylinderGeometry(0.3, 0.45, 6, 8),
     new THREE.MeshLambertMaterial({ color: 0x553311 })
@@ -724,7 +878,6 @@ function addDownedTree(lat, lon) {
   trunk.rotation.z = Math.PI / 2;
   trunk.position.set(0, 0.4, 0);
   grp.add(trunk);
-  // foliage blob
   const leaves = new THREE.Mesh(
     new THREE.SphereGeometry(2.2, 8, 6),
     new THREE.MeshLambertMaterial({ color: 0x224411 })
@@ -737,31 +890,22 @@ function addDownedTree(lat, lon) {
   disGroup(grp); scene.add(grp);
 }
 
-// ── Hurricane shelter tent ──
 function addShelterTent(lat, lon, label) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
-
-  // Floor mat
   const floorMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
   const floor = new THREE.Mesh(new THREE.BoxGeometry(12, 0.15, 8), floorMat);
   floor.position.y = 0.07;
   grp.add(floor);
-
-  // Tent body (stretched box)
   const tentMat = new THREE.MeshLambertMaterial({ color: 0xee9922 });
   const tent = new THREE.Mesh(new THREE.BoxGeometry(12, 4, 8), tentMat);
   tent.position.y = 2;
   grp.add(tent);
-
-  // Tent ridge (triangular prism via CylinderGeometry trick)
   const ridgeMat = new THREE.MeshLambertMaterial({ color: 0xcc7711 });
   const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 13, 4), ridgeMat);
   ridge.rotation.z = Math.PI / 2;
   ridge.position.y = 4.1;
   grp.add(ridge);
-
-  // Red cross on side
   const crossMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
   const crossH = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.15), crossMat);
   crossH.position.set(0, 2, 4.1);
@@ -769,22 +913,18 @@ function addShelterTent(lat, lon, label) {
   const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.2, 0.15), crossMat);
   crossV.position.set(0, 2, 4.1);
   grp.add(crossV);
-
-  // Support poles at corners
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
   [[-5.8,3.8],[-5.8,-3.8],[5.8,3.8],[5.8,-3.8]].forEach(([px,pz]) => {
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.2, 6), poleMat);
     pole.position.set(px, 2.1, pz);
     grp.add(pole);
   });
-
   grp.position.set(wx, 0, wz);
   disGroup(grp); scene.add(grp);
   if (label) makeLabel(label, wx, 5.5, wz);
   return grp;
 }
 
-// ── Casualty marker (red cross on ground) ──
 function addCasualtyMarker(lat, lon, num) {
   const [wx, wz] = ll2w(lat, lon);
   const grp = new THREE.Group();
@@ -800,48 +940,33 @@ function addCasualtyMarker(lat, lon, num) {
   disGroup(grp); scene.add(grp);
 }
 
-// ── Disaster scene layout ──
-// Flood: south campus low-lying (near road/drainage)
+// Disaster scene
 const floodWater1 = addFlood(29.1912, -81.0510, 200, 100);
 const floodWater2 = addFlood(29.1908, -81.0480, 120,  70);
-
-// Fire: Hangar Charlie (hit by debris) + nearby fuel spill
 addFire(29.1944, -81.0460, 14, 5, 8);
 addSmoke(29.1944,-81.0460, 16, 12);
-addFire(29.1940, -81.0458,  0, 3, 5);   // ground fuel fire
-
-// Partial damage fire: COAS building roof
+addFire(29.1940, -81.0458,  0, 3, 5);
 addFire(29.1933, -81.0520, 14, 3, 4);
 addSmoke(29.1933,-81.0520, 16, 8);
-
-// Debris fields
-addDebrisField(29.1945, -81.0455, 40, 50);   // near hangars
-addDebrisField(29.1919, -81.0512, 25, 35);   // south campus road
-addDebrisField(29.1938, -81.0500, 18, 28);   // central quad
-
-// Downed trees
+addDebrisField(29.1945, -81.0455, 40, 50);
+addDebrisField(29.1919, -81.0512, 25, 35);
+addDebrisField(29.1938, -81.0500, 18, 28);
 addDownedTree(29.1925, -81.0500);
 addDownedTree(29.1930, -81.0500);
 addDownedTree(29.1935, -81.0500);
 addDownedTree(29.1916, -81.0498);
-
-// Hurricane shelters (Student Union & Rec Center converted)
 addShelterTent(29.1915, -81.0510, '⛺ SHELTER ALPHA');
 addShelterTent(29.1920, -81.0500, '⛺ SHELTER BRAVO');
 addShelterTent(29.1957, -81.0490, '⛺ SHELTER CHARLIE (STAGING)');
-
-// Casualty markers
 addCasualtyMarker(29.1914, -81.0508, 1);
 addCasualtyMarker(29.1917, -81.0503, 2);
 addCasualtyMarker(29.1943, -81.0462, 3);
 
-// ── Update disaster animations ──
 function updateDisaster(dt) {
   if (!disasterActive) return;
   disasterTime += dt;
   const t = disasterTime;
 
-  // Animate fire cones
   fireGroups.forEach(grp => {
     grp.children.forEach(child => {
       if (child.userData.phase !== undefined) {
@@ -849,7 +974,6 @@ function updateDisaster(dt) {
         const sway    = Math.sin(t *  4 + child.userData.phase) * 0.08;
         child.scale.set(flicker, flicker * (0.85 + Math.sin(t*8+child.userData.phase)*0.15), flicker);
         child.rotation.z = sway;
-        // Shift colour orange ↔ red
         const r = 1.0;
         const g = 0.2 + 0.3 * Math.abs(Math.sin(t * 6 + child.userData.phase));
         child.material.color.setRGB(r, g, 0);
@@ -857,14 +981,12 @@ function updateDisaster(dt) {
     });
   });
 
-  // Rise smoke
   smokeParticles.forEach(grp => {
     grp.children.forEach(sp => {
       sp.position.y += sp.userData.riseSpeed * dt;
       sp.position.x += sp.userData.drift.x * dt;
       sp.position.z += sp.userData.drift.z * dt;
       sp.material.opacity = Math.max(0, sp.material.opacity - 0.008 * dt);
-      // reset when too high or invisible
       if (sp.position.y > sp.userData.maxY || sp.material.opacity <= 0) {
         sp.position.y = sp.userData.baseY;
         sp.position.x = (Math.random()-0.5)*2;
@@ -874,141 +996,501 @@ function updateDisaster(dt) {
     });
   });
 
-  // Water ripple — subtle vertical bob
   [floodWater1, floodWater2].forEach(w => {
     w.position.y = w.userData.baseY + Math.sin(t * 0.8) * 0.08;
     w.material.opacity = 0.45 + 0.1 * Math.sin(t * 1.2);
   });
 }
 
-// ── Disaster toggle ──
 function toggleDisaster() {
   disasterActive = !disasterActive;
   disasterObjects.forEach(o => o.visible = disasterActive);
   showToast(disasterActive ? '⚠ DISASTER MODE ON' : 'DISASTER MODE OFF');
-  // Reset smoke opacity on re-enable
   if (disasterActive) {
     smokeParticles.forEach(grp => grp.children.forEach(sp => { sp.material.opacity = 0.4; }));
   }
 }
 
 // ═══════════════════════════════════════════════
-//  eVTOL 3D MODEL
+//  eVTOL DRONE FACTORY + MULTI-DRONE
 // ═══════════════════════════════════════════════
-const evtolGroup = new THREE.Group();
-scene.add(evtolGroup);
+const DRONE_COLORS = [0x1a4080, 0xaa2222, 0x22aa44, 0xdd8800];
+const DRONE_NAMES  = ['BLUE', 'RED', 'GREEN', 'ORANGE'];
+const DRONE_CSS    = ['#1a7fff', '#ff4444', '#44dd66', '#ffaa22'];
 
-// Body
-const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1a4080 });
-const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 0.9), bodyMat);
-evtolGroup.add(body);
+function createDroneModel(bodyColor) {
+  const group = new THREE.Group();
+  const rotorMeshes = [];
 
-// Top dome
-const domeMat = new THREE.MeshLambertMaterial({ color: 0x2a5faa, transparent: true, opacity: 0.85 });
-const dome = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
-dome.position.y = 0.22;
-evtolGroup.add(dome);
+  const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 0.9), bodyMat);
+  group.add(body);
 
-// Camera pod (belly)
-const camPodMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
-const camPod = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), camPodMat);
-camPod.position.y = -0.3;
-evtolGroup.add(camPod);
+  const domeMat = new THREE.MeshLambertMaterial({ color: bodyColor, transparent: true, opacity: 0.85 });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
+  dome.position.y = 0.22;
+  group.add(dome);
 
-// Arms + rotors
-const armMat   = new THREE.MeshLambertMaterial({ color: 0x2a3a5a });
-const motorMat = new THREE.MeshLambertMaterial({ color: 0x0a1a30 });
-const rotorMat = new THREE.MeshLambertMaterial({ color: 0x88bbdd, transparent: true, opacity: 0.65 });
+  const camPodMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
+  const camPod = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), camPodMat);
+  camPod.position.y = -0.3;
+  group.add(camPod);
 
-const rotorMeshes = [];
-const ARM_DIRS = [[-1,-1],[1,-1],[-1,1],[1,1]];
+  const armMat   = new THREE.MeshLambertMaterial({ color: 0x2a3a5a });
+  const motorMat = new THREE.MeshLambertMaterial({ color: 0x0a1a30 });
+  const rotorMat = new THREE.MeshLambertMaterial({ color: 0x88bbdd, transparent: true, opacity: 0.65 });
 
-ARM_DIRS.forEach(([sx, sz]) => {
-  // Arm
-  const armLen = 1.65;
-  const armGeo = new THREE.BoxGeometry(0.1, 0.1, armLen);
-  const arm = new THREE.Mesh(armGeo, armMat);
-  arm.position.set(sx * 0.65, 0.05, sz * 0.65);
-  arm.rotation.y = Math.atan2(sx, sz);
-  evtolGroup.add(arm);
+  const ARM_DIRS = [[-1,-1],[1,-1],[-1,1],[1,1]];
+  ARM_DIRS.forEach(([sx, sz]) => {
+    const armGeo = new THREE.BoxGeometry(0.1, 0.1, 1.65);
+    const arm = new THREE.Mesh(armGeo, armMat);
+    arm.position.set(sx * 0.65, 0.05, sz * 0.65);
+    arm.rotation.y = Math.atan2(sx, sz);
+    group.add(arm);
 
-  const motorPos = new THREE.Vector3(sx * 1.25, 0.1, sz * 1.25);
+    const motorPos = new THREE.Vector3(sx * 1.25, 0.1, sz * 1.25);
+    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 10), motorMat);
+    motor.position.copy(motorPos);
+    group.add(motor);
 
-  // Motor
-  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 10), motorMat);
-  motor.position.copy(motorPos);
-  evtolGroup.add(motor);
+    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.03, 16), rotorMat);
+    rotor.position.copy(motorPos).add(new THREE.Vector3(0, 0.12, 0));
+    group.add(rotor);
+    rotorMeshes.push({ mesh: rotor, dir: sx * sz > 0 ? 1 : -1 });
+  });
 
-  // Rotor disc
-  const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.03, 16), rotorMat);
-  rotor.position.copy(motorPos).add(new THREE.Vector3(0, 0.12, 0));
-  evtolGroup.add(rotor);
-  rotorMeshes.push({ mesh: rotor, dir: sx * sz > 0 ? 1 : -1 });
-});
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x223355 });
+  [[-0.5,-0.5],[0.5,-0.5],[-0.5,0.5],[0.5,0.5]].forEach(([lx,lz]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 6), legMat);
+    leg.position.set(lx * 0.9, -0.42, lz * 0.9);
+    group.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.06), legMat);
+    foot.position.set(lx * 0.9, -0.62, lz * 0.9);
+    group.add(foot);
+  });
 
-// Landing legs
-const legMat = new THREE.MeshLambertMaterial({ color: 0x223355 });
-[[-0.5,-0.5],[0.5,-0.5],[-0.5,0.5],[0.5,0.5]].forEach(([lx,lz]) => {
-  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 6), legMat);
-  leg.position.set(lx * 0.9, -0.42, lz * 0.9);
-  evtolGroup.add(leg);
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.06), legMat);
-  foot.position.set(lx * 0.9, -0.62, lz * 0.9);
-  evtolGroup.add(foot);
-});
+  function makeLight(color) {
+    return new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color }));
+  }
+  const navRed   = makeLight(0xff2222);
+  const navGreen = makeLight(0x00ff44);
+  const navWhite = makeLight(0xffffff);
+  navRed.position.set(-1.25,  0.1, -1.25);
+  navGreen.position.set( 1.25, 0.1, -1.25);
+  navWhite.position.set(0, 0.25, 1.1);
+  group.add(navRed, navGreen, navWhite);
 
-// Nav lights
-function makeLight(color) {
-  const m = new THREE.MeshBasicMaterial({ color });
-  return new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), m);
+  const beamGeo = new THREE.ConeGeometry(0.8, 3, 12, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.y = -2.0;
+  beam.rotation.x = Math.PI;
+  group.add(beam);
+
+  return { group, rotorMeshes, navRed, navGreen, navWhite, beam };
 }
-const navRed   = makeLight(0xff2222);
-const navGreen = makeLight(0x00ff44);
-const navWhite = makeLight(0xffffff);
-navRed.position.set(-1.25,  0.1, -1.25);
-navGreen.position.set( 1.25, 0.1, -1.25);
-navWhite.position.set(0, 0.25, 1.1);
-evtolGroup.add(navRed, navGreen, navWhite);
 
-// ─ Scan beam cone ─
-const beamGeo = new THREE.ConeGeometry(0.8, 3, 12, 1, true);
-const beamMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
-const beam = new THREE.Mesh(beamGeo, beamMat);
-beam.position.y = -2.0;
-beam.rotation.x = Math.PI;
-evtolGroup.add(beam);
+// Initialize 4 drones
+const drones = [];
+const DRONE_STARTS = [
+  { x:  0,   y: 30, z:  0,   heading: 0 },
+  { x:  80,  y: 30, z:  0,   heading: 90 },
+  { x:  0,   y: 30, z:  80,  heading: 180 },
+  { x: -80,  y: 30, z:  0,   heading: 270 },
+];
 
-// ═══════════════════════════════════════════════
-//  FLIGHT STATE
-// ═══════════════════════════════════════════════
-const F = {
-  x: 0, y: 30, z: 0,      // world position (metres from origin)
-  heading: 0,               // degrees, 0=north
-  speed: 0,                 // m/s (forward)
-  vspeed: 0,                // m/s (vertical)
-  speedMult: 1.0,           // 0.5 – 3.0
-};
+for (let i = 0; i < 4; i++) {
+  const model = createDroneModel(DRONE_COLORS[i]);
+  scene.add(model.group);
+  const s = DRONE_STARTS[i];
+  drones.push({
+    x: s.x, y: s.y, z: s.z,
+    heading: s.heading,
+    speed: 0, vspeed: 0, speedMult: 1.0,
+    model: model,
+    blinkT: 0,
+  });
+}
 
-const MAX_SPEED  = 22;   // m/s
+let activeDrone = 0;
+let F = drones[0];
+
+const MAX_SPEED  = 22;
 const MAX_VSPEED = 8;
 const ACCEL      = 9;
-const TURN_RATE  = 75;   // deg/s
+const TURN_RATE  = 75;
+
+// ═══════════════════════════════════════════════
+//  AI AIRCRAFT
+// ═══════════════════════════════════════════════
+function createAircraftModel(type) {
+  const grp = new THREE.Group();
+
+  if (type === 'jet') {
+    const fuseMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+    const fuse = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 30), fuseMat);
+    grp.add(fuse);
+    const wingMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(28, 0.4, 6), wingMat);
+    wing.position.z = 2;
+    grp.add(wing);
+    const tailMat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+    const tailV = new THREE.Mesh(new THREE.BoxGeometry(0.4, 6, 4), tailMat);
+    tailV.position.set(0, 3, 13);
+    grp.add(tailV);
+    const tailH = new THREE.Mesh(new THREE.BoxGeometry(10, 0.3, 3), tailMat);
+    tailH.position.set(0, 1, 13);
+    grp.add(tailH);
+    // Engines
+    const engMat = new THREE.MeshLambertMaterial({ color: 0x666666 });
+    [-8, 8].forEach(ex => {
+      const eng = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.2, 4, 8), engMat);
+      eng.rotation.x = Math.PI / 2;
+      eng.position.set(ex, -1, 4);
+      grp.add(eng);
+    });
+  } else if (type === 'ga') {
+    const fuseMat = new THREE.MeshLambertMaterial({ color: 0xeeeedd });
+    const fuse = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 8), fuseMat);
+    grp.add(fuse);
+    const wingMat = new THREE.MeshLambertMaterial({ color: 0xddddcc });
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(12, 0.2, 2), wingMat);
+    wing.position.z = 0.5;
+    grp.add(wing);
+    const tailV = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xccccbb }));
+    tailV.position.set(0, 1.2, 3.5);
+    grp.add(tailV);
+    const tailH = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 1), new THREE.MeshLambertMaterial({ color: 0xccccbb }));
+    tailH.position.set(0, 0.5, 3.5);
+    grp.add(tailH);
+  } else if (type === 'heli') {
+    const fuseMat = new THREE.MeshLambertMaterial({ color: 0x993333 });
+    const fuse = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 5), fuseMat);
+    grp.add(fuse);
+    const tailMat = new THREE.MeshLambertMaterial({ color: 0x882222 });
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 6), tailMat);
+    tail.position.set(0, 0.5, 5);
+    grp.add(tail);
+    const rotorMat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.5 });
+    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 0.1, 16), rotorMat);
+    rotor.position.y = 1.5;
+    rotor.userData.isRotor = true;
+    grp.add(rotor);
+    const tailRotor = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.1, 8), rotorMat);
+    tailRotor.position.set(0, 1, 8);
+    tailRotor.rotation.z = Math.PI / 2;
+    tailRotor.userData.isRotor = true;
+    grp.add(tailRotor);
+  }
+
+  return grp;
+}
+
+// AI aircraft definitions with waypoint routes
+const aiAircraft = [];
+
+function createAIRoute(type, routeName) {
+  const [rcx, rcz] = ll2w(RWY_CENTER_LAT, RWY_CENTER_LON);
+  const fwdX = Math.sin(RWY_HDG_RAD);
+  const fwdZ = -Math.cos(RWY_HDG_RAD);
+
+  if (routeName === 'approach7L') {
+    // ILS approach from the east, descending to runway 7L
+    return [
+      { x: rcx + fwdX * 2000, y: 250, z: rcz + fwdZ * 2000, speed: 70 },
+      { x: rcx + fwdX * 1500, y: 200, z: rcz + fwdZ * 1500, speed: 65 },
+      { x: rcx + fwdX * 1000, y: 140, z: rcz + fwdZ * 1000, speed: 60 },
+      { x: rcx + fwdX * 500,  y: 80,  z: rcz + fwdZ * 500,  speed: 55 },
+      { x: rcx + fwdX * 200,  y: 30,  z: rcz + fwdZ * 200,  speed: 50 },
+      { x: rcx,               y: 3,   z: rcz,                speed: 45 },
+      { x: rcx - fwdX * 300,  y: 2,   z: rcz - fwdZ * 300,  speed: 20 },
+      // go around — climb back out
+      { x: rcx - fwdX * 600,  y: 60,  z: rcz - fwdZ * 600,  speed: 55 },
+      { x: rcx - fwdX * 800,  y: 150, z: rcz - fwdZ * 800 - 400, speed: 65 },
+      { x: rcx + fwdX * 500,  y: 300, z: rcz + fwdZ * 500 - 800,  speed: 70 },
+      { x: rcx + fwdX * 2000, y: 280, z: rcz + fwdZ * 2000 - 400, speed: 70 },
+    ];
+  }
+
+  if (routeName === 'departure25R') {
+    return [
+      { x: rcx - fwdX * 400,  y: 2,   z: rcz - fwdZ * 400,  speed: 10 },
+      { x: rcx - fwdX * 200,  y: 2,   z: rcz - fwdZ * 200,  speed: 40 },
+      { x: rcx,               y: 10,  z: rcz,                speed: 60 },
+      { x: rcx + fwdX * 300,  y: 60,  z: rcz + fwdZ * 300,  speed: 70 },
+      { x: rcx + fwdX * 800,  y: 180, z: rcz + fwdZ * 800,  speed: 75 },
+      { x: rcx + fwdX * 1500, y: 300, z: rcz + fwdZ * 1500, speed: 75 },
+      { x: rcx + fwdX * 2000, y: 350, z: rcz + fwdZ * 2000 + 300, speed: 70 },
+      { x: rcx + fwdX * 1000, y: 300, z: rcz + fwdZ * 1000 + 800, speed: 65 },
+      { x: rcx - fwdX * 500,  y: 200, z: rcz - fwdZ * 500 + 400,  speed: 60 },
+      { x: rcx - fwdX * 600,  y: 50,  z: rcz - fwdZ * 600,  speed: 40 },
+    ];
+  }
+
+  if (routeName === 'pattern') {
+    const patAlt = 150;
+    const patSpd = 40;
+    return [
+      { x: rcx - fwdX * 500,  y: patAlt, z: rcz - fwdZ * 500,               speed: patSpd },
+      { x: rcx - fwdX * 500,  y: patAlt, z: rcz - fwdZ * 500 + 500,         speed: patSpd },
+      { x: rcx + fwdX * 500,  y: patAlt, z: rcz + fwdZ * 500 + 500,         speed: patSpd },
+      { x: rcx + fwdX * 500,  y: patAlt, z: rcz + fwdZ * 500,               speed: patSpd },
+    ];
+  }
+
+  if (routeName === 'helipattern') {
+    return [
+      { x: rcx + 200,  y: 80,  z: rcz + 200,  speed: 25 },
+      { x: rcx - 200,  y: 100, z: rcz + 200,  speed: 25 },
+      { x: rcx - 200,  y: 80,  z: rcz - 200,  speed: 25 },
+      { x: rcx + 200,  y: 100, z: rcz - 200,  speed: 25 },
+    ];
+  }
+
+  return [];
+}
+
+function spawnAI(type, routeName) {
+  const model = createAircraftModel(type);
+  scene.add(model);
+  const route = createAIRoute(type, routeName);
+  if (route.length === 0) return;
+
+  const ai = {
+    type,
+    model,
+    route,
+    wpIdx: 0,
+    x: route[0].x, y: route[0].y, z: route[0].z,
+    speed: route[0].speed,
+    heading: 0,
+  };
+  aiAircraft.push(ai);
+}
+
+spawnAI('jet', 'approach7L');
+spawnAI('jet', 'departure25R');
+spawnAI('ga', 'pattern');
+spawnAI('heli', 'helipattern');
+
+function updateAI(dt) {
+  aiAircraft.forEach(ai => {
+    const target = ai.route[ai.wpIdx];
+    const dx = target.x - ai.x;
+    const dy = target.y - ai.y;
+    const dz = target.z - ai.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    const dist3d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+    ai.speed += (target.speed - ai.speed) * dt * 0.5;
+
+    if (dist3d < 20) {
+      ai.wpIdx = (ai.wpIdx + 1) % ai.route.length;
+    }
+
+    if (dist > 1) {
+      ai.heading = Math.atan2(dx, -dz);
+    }
+
+    const move = ai.speed * dt;
+    if (dist3d > 0.1) {
+      ai.x += (dx / dist3d) * move;
+      ai.y += (dy / dist3d) * move;
+      ai.z += (dz / dist3d) * move;
+    }
+
+    ai.model.position.set(ai.x, ai.y, ai.z);
+    ai.model.rotation.y = -ai.heading;
+
+    // Spin heli rotors
+    ai.model.children.forEach(ch => {
+      if (ch.userData.isRotor) ch.rotation.y += 0.3;
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  MQTT
+// ═══════════════════════════════════════════════
+let mqttClient = null;
+let mqttConnected = false;
+const mqttLandmarks = new Map();
+
+const weather = {
+  windSpeed: 0,
+  windDir: 0,
+  visibility: 10000,
+  rain: false,
+  fog: false,
+};
+
+function connectMQTT() {
+  const url = document.getElementById('mqtt-url').value;
+  if (mqttClient) {
+    try { mqttClient.end(true); } catch(e) {}
+  }
+
+  try {
+    mqttClient = mqtt.connect(url, {
+      clientId: 'evtol_sim_' + Date.now(),
+      reconnectPeriod: 5000,
+    });
+
+    mqttClient.on('connect', () => {
+      mqttConnected = true;
+      updateMQTTStatus();
+      mqttClient.subscribe('evtol/weather');
+      mqttClient.subscribe('evtol/landmarks');
+      mqttClient.subscribe('evtol/environment');
+      showToast('MQTT CONNECTED');
+    });
+
+    mqttClient.on('message', (topic, message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        handleMQTTMessage(topic, data);
+      } catch(e) {}
+    });
+
+    mqttClient.on('close', () => {
+      mqttConnected = false;
+      updateMQTTStatus();
+    });
+
+    mqttClient.on('error', () => {
+      mqttConnected = false;
+      updateMQTTStatus();
+    });
+  } catch(e) {
+    showToast('MQTT CONNECTION FAILED');
+  }
+}
+
+function disconnectMQTT() {
+  if (mqttClient) {
+    mqttClient.end(true);
+    mqttClient = null;
+    mqttConnected = false;
+    updateMQTTStatus();
+    showToast('MQTT DISCONNECTED');
+  }
+}
+
+function handleMQTTMessage(topic, data) {
+  if (topic === 'evtol/weather') {
+    if (data.windSpeed !== undefined) weather.windSpeed = data.windSpeed;
+    if (data.windDir !== undefined) weather.windDir = data.windDir;
+    if (data.visibility !== undefined) weather.visibility = data.visibility;
+    if (data.rain !== undefined) weather.rain = data.rain;
+    if (data.fog !== undefined) weather.fog = data.fog;
+    applyWeather();
+  }
+
+  if (topic === 'evtol/landmarks') {
+    if (data.lat && data.lon) {
+      const key = data.label || `${data.lat},${data.lon}`;
+      if (mqttLandmarks.has(key)) {
+        scene.remove(mqttLandmarks.get(key));
+      }
+      const [wx, wz] = ll2w(data.lat, data.lon);
+      const alt = data.alt || 0;
+      const grp = new THREE.Group();
+
+      const markerMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      const marker = new THREE.Mesh(new THREE.ConeGeometry(3, 8, 6), markerMat);
+      marker.position.set(0, alt + 4, 0);
+      grp.add(marker);
+
+      const poleMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5 });
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, alt + 4, 6), poleMat);
+      pole.position.set(0, (alt + 4) / 2, 0);
+      grp.add(pole);
+
+      grp.position.set(wx, 0, wz);
+      scene.add(grp);
+      mqttLandmarks.set(key, grp);
+
+      if (data.label) makeLabel(data.label, wx, alt + 10, wz);
+    }
+  }
+
+  if (topic === 'evtol/environment') {
+    if (data.skyColor) {
+      scene.background = new THREE.Color(data.skyColor);
+      skyMat.color = new THREE.Color(data.skyColor);
+    }
+    if (data.fogDensity !== undefined) {
+      scene.fog.density = data.fogDensity;
+    }
+  }
+}
+
+function applyWeather() {
+  // Fog/visibility
+  const visFactor = Math.max(0.0001, 1.0 / (weather.visibility / 1000));
+  scene.fog.density = Math.min(0.01, visFactor * 0.001);
+
+  // Sky tint for rain/fog
+  if (weather.rain) {
+    scene.background = new THREE.Color(0x445566);
+    skyMat.color = new THREE.Color(0x445566);
+  } else if (weather.fog) {
+    scene.background = new THREE.Color(0x999999);
+    skyMat.color = new THREE.Color(0x999999);
+  } else {
+    scene.background = new THREE.Color(0x6ba3d6);
+    skyMat.color = new THREE.Color(0x6ba3d6);
+  }
+
+  // Update wind indicator
+  const windEl = document.getElementById('wind-indicator');
+  if (weather.windSpeed > 0) {
+    windEl.style.display = 'block';
+    windEl.textContent = `WIND ${Math.round(weather.windDir)}° @ ${weather.windSpeed.toFixed(1)} m/s`;
+  } else {
+    windEl.style.display = 'none';
+  }
+}
+
+function updateMQTTStatus() {
+  const dot = document.getElementById('mqtt-dot');
+  const state = document.getElementById('mqtt-state');
+  if (mqttConnected) {
+    dot.style.background = '#44ff44';
+    state.textContent = 'CONNECTED';
+  } else {
+    dot.style.background = '#ff4444';
+    state.textContent = 'DISCONNECTED';
+  }
+}
+
+let mqttPanelOpen = false;
+function toggleMQTTPanel() {
+  mqttPanelOpen = !mqttPanelOpen;
+  document.getElementById('mqtt-panel').style.display = mqttPanelOpen ? 'block' : 'none';
+}
 
 // ═══════════════════════════════════════════════
 //  INPUT
 // ═══════════════════════════════════════════════
 const keys = {};
-let camMode = 'fpv'; // 'fpv' | 'chase' | 'map'
+let camMode = 'fpv';
 
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
 
   switch (e.code) {
-    case 'Digit1': camMode = 'fpv';   updateCamBadge(); break;
-    case 'Digit2': camMode = 'chase'; updateCamBadge(); break;
-    case 'Digit3': camMode = 'map';   updateCamBadge(); break;
+    case 'Digit1': switchDrone(0); break;
+    case 'Digit2': switchDrone(1); break;
+    case 'Digit3': switchDrone(2); break;
+    case 'Digit4': switchDrone(3); break;
+    case 'KeyC':
+      camMode = camMode === 'fpv' ? 'chase' : camMode === 'chase' ? 'map' : 'fpv';
+      updateCamBadge();
+      break;
     case 'KeyR':   resetFlight(); break;
     case 'KeyX':   toggleDisaster(); break;
+    case 'KeyM':   toggleMQTTPanel(); break;
     case 'Equal':
     case 'NumpadAdd':
       F.speedMult = Math.min(3.0, F.speedMult + 0.5);
@@ -1021,16 +1503,32 @@ document.addEventListener('keydown', e => {
       break;
   }
 
-  // Prevent page scroll on arrow/space
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
     e.preventDefault();
   }
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 
+function switchDrone(idx) {
+  if (idx === activeDrone) return;
+  // Stop current drone
+  F.speed = 0;
+  F.vspeed = 0;
+  activeDrone = idx;
+  F = drones[activeDrone];
+  updateDroneBadge();
+  showToast(`DRONE ${idx + 1} — ${DRONE_NAMES[idx]}`);
+}
+
 function updateCamBadge() {
   const names = { fpv:'FPV COCKPIT', chase:'CHASE CAM', map:'MAP VIEW' };
   document.getElementById('cam-mode-name').textContent = names[camMode];
+}
+
+function updateDroneBadge() {
+  const el = document.getElementById('drone-name');
+  el.textContent = `${activeDrone + 1} — ${DRONE_NAMES[activeDrone]}`;
+  el.style.color = DRONE_CSS[activeDrone];
 }
 
 function showToast(msg) {
@@ -1063,24 +1561,20 @@ let warnTimer = null;
 function updateFlight(dt) {
   const maxSpd = MAX_SPEED * F.speedMult;
 
-  // Forward / backward
   if (keys['ArrowUp']   || keys['KeyW']) {
     F.speed = Math.min(F.speed + ACCEL * dt, maxSpd);
   } else if (keys['ArrowDown'] || keys['KeyS']) {
     F.speed = Math.max(F.speed - ACCEL * 1.8 * dt, -maxSpd * 0.4);
   } else {
-    // Friction
     const fric = F.speed > 0 ? -1 : 1;
     F.speed += fric * Math.min(Math.abs(F.speed), 5 * dt);
     if (Math.abs(F.speed) < 0.05) F.speed = 0;
   }
 
-  // Yaw
   if (keys['ArrowLeft']  || keys['KeyA']) F.heading -= TURN_RATE * dt;
   if (keys['ArrowRight'] || keys['KeyD']) F.heading += TURN_RATE * dt;
   F.heading = ((F.heading % 360) + 360) % 360;
 
-  // Vertical
   if (keys['Space']) {
     F.vspeed = Math.min(F.vspeed + 7 * dt, MAX_VSPEED * F.speedMult);
   } else if (keys['ShiftLeft'] || keys['ShiftRight']) {
@@ -1091,12 +1585,10 @@ function updateFlight(dt) {
     if (Math.abs(F.vspeed) < 0.04) F.vspeed = 0;
   }
 
-  // Strafe
   let strafe = 0;
   if (keys['KeyQ']) strafe = -10 * F.speedMult;
   if (keys['KeyE']) strafe =  10 * F.speedMult;
 
-  // Move (heading 0=north=-Z, heading 90=east=+X)
   const hRad = F.heading * Math.PI / 180;
   const fwdX =  Math.sin(hRad);
   const fwdZ = -Math.cos(hRad);
@@ -1107,7 +1599,13 @@ function updateFlight(dt) {
   F.z += (fwdZ * F.speed + rtZ * strafe) * dt;
   F.y += F.vspeed * dt;
 
-  // Clamp + boundary warning
+  // Wind effect from MQTT
+  if (weather.windSpeed > 0) {
+    const windRad = weather.windDir * Math.PI / 180;
+    F.x += Math.sin(windRad) * weather.windSpeed * dt;
+    F.z -= Math.cos(windRad) * weather.windSpeed * dt;
+  }
+
   const atEdge =
     F.x < -HALF_GRID_M || F.x > HALF_GRID_M ||
     F.z < -HALF_GRID_M || F.z > HALF_GRID_M;
@@ -1129,33 +1627,32 @@ function updateFlight(dt) {
 // ═══════════════════════════════════════════════
 //  eVTOL VISUALS UPDATE
 // ═══════════════════════════════════════════════
-let blinkT = 0;
-
 function updateEvtol(dt) {
-  evtolGroup.position.set(F.x, F.y, F.z);
-  evtolGroup.rotation.y = -F.heading * Math.PI / 180;
+  drones.forEach((drone, idx) => {
+    const m = drone.model;
+    m.group.position.set(drone.x, drone.y, drone.z);
+    m.group.rotation.y = -drone.heading * Math.PI / 180;
 
-  // Slight bank on yaw
-  const bankDir = (keys['ArrowRight']||keys['KeyD']) ? -1 : (keys['ArrowLeft']||keys['KeyA']) ? 1 : 0;
-  evtolGroup.rotation.z = THREE.MathUtils.lerp(evtolGroup.rotation.z, bankDir * 0.18, 0.08);
+    if (idx === activeDrone) {
+      const bankDir = (keys['ArrowRight']||keys['KeyD']) ? -1 : (keys['ArrowLeft']||keys['KeyA']) ? 1 : 0;
+      m.group.rotation.z = THREE.MathUtils.lerp(m.group.rotation.z, bankDir * 0.18, 0.08);
+      const pitchDir = drone.speed > 0.5 ? 1 : drone.speed < -0.5 ? -1 : 0;
+      m.group.rotation.x = THREE.MathUtils.lerp(m.group.rotation.x, pitchDir * 0.12, 0.06);
+    } else {
+      m.group.rotation.z = THREE.MathUtils.lerp(m.group.rotation.z, 0, 0.05);
+      m.group.rotation.x = THREE.MathUtils.lerp(m.group.rotation.x, 0, 0.05);
+    }
 
-  // Slight pitch on forward
-  const pitchDir = F.speed > 0.5 ? 1 : F.speed < -0.5 ? -1 : 0;
-  evtolGroup.rotation.x = THREE.MathUtils.lerp(evtolGroup.rotation.x, pitchDir * 0.12, 0.06);
+    const rpm = 0.2 + Math.abs(drone.speed) * 0.015 + Math.abs(drone.vspeed) * 0.03;
+    m.rotorMeshes.forEach(r => { r.mesh.rotation.y += r.dir * (idx === activeDrone ? rpm : 0.15); });
 
-  // Spin rotors
-  const rpm = 0.2 + Math.abs(F.speed) * 0.015 + Math.abs(F.vspeed) * 0.03;
-  rotorMeshes.forEach(r => { r.mesh.rotation.y += r.dir * rpm; });
-
-  // Nav light blink
-  blinkT += dt;
-  const blink = Math.sin(blinkT * 5) > 0;
-  navRed.visible   = blink;
-  navGreen.visible = blink;
-  navWhite.visible = Math.sin(blinkT * 2) > 0.5;
-
-  // Beam intensity
-  beam.material.opacity = 0.08 + 0.06 * Math.sin(blinkT * 3);
+    drone.blinkT += dt;
+    const blink = Math.sin(drone.blinkT * 5) > 0;
+    m.navRed.visible   = blink;
+    m.navGreen.visible = blink;
+    m.navWhite.visible = Math.sin(drone.blinkT * 2) > 0.5;
+    m.beam.material.opacity = 0.08 + 0.06 * Math.sin(drone.blinkT * 3);
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -1167,28 +1664,24 @@ function updateCamera() {
   const hRad = F.heading * Math.PI / 180;
 
   if (camMode === 'fpv') {
-    // Cockpit: sit inside the body, look forward
-    const pitchRad = -(F.speed / MAX_SPEED) * 0.12; // slight nose-down tilt
     camera.position.set(F.x, F.y + 0.6, F.z);
+    const pitchRad = -(F.speed / MAX_SPEED) * 0.12;
     const lookX = F.x + Math.sin(hRad) * 500;
     const lookZ = F.z - Math.cos(hRad) * 500;
     const lookY = F.y + 0.6 + Math.tan(pitchRad) * 500;
     camera.lookAt(lookX, lookY, lookZ);
-
-    // Hide eVTOL body in FPV (you're inside it)
-    evtolGroup.visible = false;
+    drones.forEach((d, i) => { d.model.group.visible = i !== activeDrone; });
 
   } else if (camMode === 'chase') {
-    evtolGroup.visible = true;
-    // Behind and above
+    drones.forEach(d => { d.model.group.visible = true; });
     const backX = -Math.sin(hRad) * 14;
     const backZ =  Math.cos(hRad) * 14;
     chaseCamPos.set(F.x + backX, F.y + 6, F.z + backZ);
     camera.position.lerp(chaseCamPos, 0.1);
     camera.lookAt(F.x, F.y + 1, F.z);
 
-  } else { // map
-    evtolGroup.visible = true;
+  } else {
+    drones.forEach(d => { d.model.group.visible = true; });
     camera.position.set(F.x, F.y + 180, F.z);
     camera.lookAt(F.x, F.y, F.z);
   }
@@ -1218,11 +1711,9 @@ function updateHUD() {
   document.getElementById('m-lon').textContent     = ll.lon.toFixed(5);
   document.getElementById('m-alt').textContent     = alt + ' m';
 
-  // Speed colour
   const spdEl = document.getElementById('spd-val');
   spdEl.style.color = spd_kt > 40 ? '#ff9944' : spd_kt > 20 ? '#ffdd44' : '#fff';
 
-  // Alt colour
   const altEl = document.getElementById('alt-val');
   altEl.style.color = alt < 10 ? '#ff4444' : alt > 200 ? '#ff9944' : '#fff';
 }
@@ -1234,17 +1725,16 @@ const mmCanvas = document.getElementById('minimap');
 const mmCtx    = mmCanvas.getContext('2d');
 const MM_W     = mmCanvas.width;
 const MM_H     = mmCanvas.height;
-const MM_SCALE = MM_W / (HALF_GRID_M * 2); // pixels per metre
+const MM_SCALE = MM_W / (HALF_GRID_M * 2);
 
 function drawMinimap() {
   mmCtx.clearRect(0, 0, MM_W, MM_H);
 
-  // BG
   mmCtx.fillStyle = 'rgba(5,10,20,0.85)';
   mmCtx.fillRect(0, 0, MM_W, MM_H);
 
   // Grid lines
-  mmCtx.strokeStyle = 'rgba(0,150,255,0.2)';
+  mmCtx.strokeStyle = 'rgba(0,150,255,0.15)';
   mmCtx.lineWidth = 0.5;
   for (let i = 0; i <= GRID_N; i++) {
     const px = i * (MM_W / GRID_N);
@@ -1253,47 +1743,73 @@ function drawMinimap() {
   }
 
   // Origin cross
-  mmCtx.strokeStyle = 'rgba(0,255,200,0.3)';
+  mmCtx.strokeStyle = 'rgba(0,255,200,0.2)';
   mmCtx.lineWidth = 1;
   mmCtx.beginPath(); mmCtx.moveTo(MM_W/2, 0); mmCtx.lineTo(MM_W/2, MM_H); mmCtx.stroke();
   mmCtx.beginPath(); mmCtx.moveTo(0, MM_H/2); mmCtx.lineTo(MM_W, MM_H/2); mmCtx.stroke();
 
-  // Boundary box
+  // Boundary
   mmCtx.strokeStyle = 'rgba(255,80,0,0.6)';
   mmCtx.lineWidth = 1.5;
   mmCtx.strokeRect(2, 2, MM_W-4, MM_H-4);
 
-  // eVTOL position
-  const px = (F.x / (HALF_GRID_M * 2) + 0.5) * MM_W;
-  const py = (F.z / (HALF_GRID_M * 2) + 0.5) * MM_H;
-
-  // Heading line
-  const hRad = F.heading * Math.PI / 180;
-  const lineLen = 14;
-  mmCtx.strokeStyle = '#00ffcc';
-  mmCtx.lineWidth = 1.5;
+  // Runway indicator
+  const [rcx, rcz] = ll2w(RWY_CENTER_LAT, RWY_CENTER_LON);
+  const rpx = (rcx / (HALF_GRID_M * 2) + 0.5) * MM_W;
+  const rpy = (rcz / (HALF_GRID_M * 2) + 0.5) * MM_H;
+  const rLen = RWY_LEN * MM_SCALE / 2;
+  mmCtx.strokeStyle = 'rgba(200,200,200,0.6)';
+  mmCtx.lineWidth = 2;
   mmCtx.beginPath();
-  mmCtx.moveTo(px, py);
-  mmCtx.lineTo(px + Math.sin(hRad) * lineLen, py - Math.cos(hRad) * lineLen);
+  mmCtx.moveTo(rpx - Math.sin(RWY_HDG_RAD) * rLen, rpy + Math.cos(RWY_HDG_RAD) * rLen);
+  mmCtx.lineTo(rpx + Math.sin(RWY_HDG_RAD) * rLen, rpy - Math.cos(RWY_HDG_RAD) * rLen);
   mmCtx.stroke();
 
-  // Dot
-  const altFrac = Math.min(1, F.y / MAX_ALT);
-  const r = Math.max(3, 5 - altFrac * 2);
-  mmCtx.beginPath();
-  mmCtx.arc(px, py, r + 3, 0, Math.PI * 2);
-  mmCtx.fillStyle = `rgba(0,200,255,${0.2 + altFrac * 0.2})`;
-  mmCtx.fill();
+  // AI aircraft on minimap
+  aiAircraft.forEach(ai => {
+    const ax = (ai.x / (HALF_GRID_M * 2) + 0.5) * MM_W;
+    const ay = (ai.z / (HALF_GRID_M * 2) + 0.5) * MM_H;
+    if (ax < 0 || ax > MM_W || ay < 0 || ay > MM_H) return;
+    mmCtx.beginPath();
+    mmCtx.arc(ax, ay, 2.5, 0, Math.PI * 2);
+    mmCtx.fillStyle = ai.type === 'jet' ? '#ffdd44' : ai.type === 'ga' ? '#ffffff' : '#ff44ff';
+    mmCtx.fill();
+  });
 
-  mmCtx.beginPath();
-  mmCtx.arc(px, py, r, 0, Math.PI * 2);
-  mmCtx.fillStyle = '#00e8ff';
-  mmCtx.fill();
-  mmCtx.strokeStyle = '#fff';
-  mmCtx.lineWidth = 1;
-  mmCtx.stroke();
+  // All drones on minimap
+  drones.forEach((drone, idx) => {
+    const px = (drone.x / (HALF_GRID_M * 2) + 0.5) * MM_W;
+    const py = (drone.z / (HALF_GRID_M * 2) + 0.5) * MM_H;
 
-  // North indicator
+    if (idx === activeDrone) {
+      // Heading line
+      const hRad = drone.heading * Math.PI / 180;
+      const lineLen = 14;
+      mmCtx.strokeStyle = DRONE_CSS[idx];
+      mmCtx.lineWidth = 1.5;
+      mmCtx.beginPath();
+      mmCtx.moveTo(px, py);
+      mmCtx.lineTo(px + Math.sin(hRad) * lineLen, py - Math.cos(hRad) * lineLen);
+      mmCtx.stroke();
+
+      // Glow
+      mmCtx.beginPath();
+      mmCtx.arc(px, py, 6, 0, Math.PI * 2);
+      mmCtx.fillStyle = DRONE_CSS[idx] + '33';
+      mmCtx.fill();
+    }
+
+    // Dot
+    mmCtx.beginPath();
+    mmCtx.arc(px, py, idx === activeDrone ? 4 : 3, 0, Math.PI * 2);
+    mmCtx.fillStyle = DRONE_CSS[idx];
+    mmCtx.fill();
+    mmCtx.strokeStyle = '#fff';
+    mmCtx.lineWidth = idx === activeDrone ? 1.5 : 0.5;
+    mmCtx.stroke();
+  });
+
+  // Labels
   mmCtx.fillStyle = 'rgba(0,200,255,0.8)';
   mmCtx.font = '8px Courier New';
   mmCtx.fillText('N', MM_W/2 - 3, 10);
@@ -1306,8 +1822,9 @@ function drawMinimap() {
 //  RESET
 // ═══════════════════════════════════════════════
 function resetFlight() {
-  F.x = 0; F.y = 30; F.z = 0;
-  F.heading = 0;
+  const s = DRONE_STARTS[activeDrone];
+  F.x = s.x; F.y = s.y; F.z = s.z;
+  F.heading = s.heading;
   F.speed   = 0;
   F.vspeed  = 0;
   showToast('POSITION RESET');
@@ -1329,6 +1846,7 @@ function animate(ts) {
   updateFlight(dt);
   updateEvtol(dt);
   updateDisaster(dt);
+  updateAI(dt);
   updateCamera();
   updateHUD();
   drawMinimap();
@@ -1356,6 +1874,8 @@ window.addEventListener('resize', () => {
 // ═══════════════════════════════════════════════
 loadTiles();
 updateCamBadge();
+updateDroneBadge();
+updateMQTTStatus();
 </script>
 </body>
 </html>
